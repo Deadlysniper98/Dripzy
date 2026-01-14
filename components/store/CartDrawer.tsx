@@ -1,12 +1,14 @@
 'use client';
 
 import { useCart } from '@/context/CartContext';
+import { useCurrency } from '@/context/CurrencyContext';
 import { X, Plus, Minus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect } from 'react';
 
 export const CartDrawer = () => {
     const { items, isDrawerOpen, toggleDrawer, updateQuantity, removeItem, cartTotal } = useCart();
+    const { formatPrice, formatRawPrice } = useCurrency();
 
     // Lock body scroll when drawer is open
     useEffect(() => {
@@ -122,7 +124,12 @@ export const CartDrawer = () => {
                                     </div>
                                     <div style={{ flex: 1 }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <h3 style={{ fontSize: '0.9rem', fontWeight: 500, margin: 0, lineHeight: 1.4, maxWidth: '180px' }}>{item.name}</h3>
+                                            <div>
+                                                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0, lineHeight: 1.4, maxWidth: '180px' }}>{item.productId ? item.name.split(' - ')[0] : item.name}</h3>
+                                                {item.variantName && (
+                                                    <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '2px' }}>{item.variantName}</div>
+                                                )}
+                                            </div>
                                             <button
                                                 onClick={() => removeItem(item.id)}
                                                 style={{
@@ -136,7 +143,7 @@ export const CartDrawer = () => {
                                                 <Trash2 size={16} />
                                             </button>
                                         </div>
-                                        <p style={{ fontWeight: 700, margin: '8px 0', fontSize: '1rem' }}>₹{item.price.toFixed(2)}</p>
+                                        <p style={{ fontWeight: 700, margin: '8px 0', fontSize: '1rem' }}>{formatPrice(item.price, (item.currency as any) || 'USD')}</p>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                             <button
                                                 onClick={() => updateQuantity(item.id, item.quantity - 1)}
@@ -195,7 +202,7 @@ export const CartDrawer = () => {
                             fontWeight: 700
                         }}>
                             <span>Total</span>
-                            <span>₹{cartTotal.toFixed(2)}</span>
+                            <span>{formatRawPrice(cartTotal)}</span>
                         </div>
                         <Link
                             href="/checkout"

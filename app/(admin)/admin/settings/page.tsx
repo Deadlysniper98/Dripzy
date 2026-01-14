@@ -1,21 +1,101 @@
 'use client';
 
-import { useState } from 'react';
-import { Store, CreditCard, Truck, Bell, Shield, Globe, Save } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Store, CreditCard, Truck, Bell, Shield, Globe, Save, Package, CheckCircle, XCircle, RefreshCw, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('general');
     const [saved, setSaved] = useState(false);
+
+    // CJ Dropshipping state
+    const [cjApiKey, setCjApiKey] = useState('');
+    const [cjStatus, setCjStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
+    const [cjLoading, setCjLoading] = useState(false);
+    const [cjMessage, setCjMessage] = useState('');
+    const [cjTokenInfo, setCjTokenInfo] = useState<{
+        accessToken?: string;
+        expiresAt?: string;
+    } | null>(null);
 
     const handleSave = () => {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
     };
 
+    // Check CJ connection status
+    const checkCJConnection = async () => {
+        setCjLoading(true);
+        setCjMessage('');
+        try {
+            const res = await fetch('/api/cj/auth');
+            const data = await res.json();
+
+            if (data.success) {
+                setCjStatus('connected');
+                setCjMessage(`Connected! ${data.categoriesCount} categories available.`);
+            } else {
+                setCjStatus('error');
+                setCjMessage(data.error || 'Not connected');
+            }
+        } catch (error) {
+            setCjStatus('error');
+            setCjMessage('Failed to check connection');
+        } finally {
+            setCjLoading(false);
+        }
+    };
+
+    // Generate new CJ access token
+    const generateCJToken = async () => {
+        if (!cjApiKey) {
+            setCjMessage('Please enter your CJ API Key');
+            return;
+        }
+
+        setCjLoading(true);
+        setCjMessage('');
+        try {
+            const res = await fetch('/api/cj/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'getToken',
+                    apiKey: cjApiKey,
+                }),
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setCjStatus('connected');
+                setCjTokenInfo({
+                    accessToken: data.data.accessToken?.substring(0, 20) + '...',
+                    expiresAt: data.data.accessTokenExpiryDate,
+                });
+                setCjMessage('Token generated successfully! Add these to your .env.local file.');
+            } else {
+                setCjStatus('error');
+                setCjMessage(data.error || 'Failed to generate token');
+            }
+        } catch (error) {
+            setCjStatus('error');
+            setCjMessage('Failed to generate token');
+        } finally {
+            setCjLoading(false);
+        }
+    };
+
+    // Check connection on mount
+    useEffect(() => {
+        if (activeTab === 'integrations') {
+            checkCJConnection();
+        }
+    }, [activeTab]);
+
     const tabs = [
         { id: 'general', label: 'General', icon: Store },
         { id: 'payments', label: 'Payments', icon: CreditCard },
         { id: 'shipping', label: 'Shipping', icon: Truck },
+        { id: 'integrations', label: 'Integrations', icon: Package },
         { id: 'notifications', label: 'Notifications', icon: Bell },
     ];
 
@@ -229,17 +309,200 @@ export default function SettingsPage() {
                                     <input type="number" defaultValue="199" style={inputStyle} />
                                 </div>
                             </div>
+                        </div>
+                    )}
 
-                            <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: '16px 0 0', paddingTop: '24px', paddingBottom: '16px', borderTop: '1px solid #eee', borderBottom: '1px solid #eee' }}>CJ Dropshipping</h2>
+                    {activeTab === 'integrations' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0, paddingBottom: '16px', borderBottom: '1px solid #eee' }}>
+                                CJ Dropshipping Integration
+                            </h2>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                                <div>
-                                    <label style={labelStyle}>CJ Client ID</label>
-                                    <input type="text" placeholder="Enter CJ Client ID" style={inputStyle} />
+                            {/* Status Card */}
+                            <div style={{
+                                padding: '20px',
+                                borderRadius: '12px',
+                                border: '1px solid',
+                                borderColor: cjStatus === 'connected' ? '#bbf7d0' : cjStatus === 'error' ? '#fecaca' : '#e5e5e5',
+                                backgroundColor: cjStatus === 'connected' ? '#f0fdf4' : cjStatus === 'error' ? '#fef2f2' : '#f9fafb',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    {cjLoading ? (
+                                        <Loader2 size={24} style={{ color: '#888', animation: 'spin 1s linear infinite' }} />
+                                    ) : cjStatus === 'connected' ? (
+                                        <CheckCircle size={24} style={{ color: '#22c55e' }} />
+                                    ) : cjStatus === 'error' ? (
+                                        <XCircle size={24} style={{ color: '#ef4444' }} />
+                                    ) : (
+                                        <AlertCircle size={24} style={{ color: '#888' }} />
+                                    )}
+                                    <div>
+                                        <div style={{ fontWeight: 600 }}>
+                                            {cjLoading ? 'Checking connection...' : cjStatus === 'connected' ? 'Connected' : 'Not Connected'}
+                                        </div>
+                                        {cjMessage && (
+                                            <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '4px' }}>{cjMessage}</div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div>
-                                    <label style={labelStyle}>CJ Client Secret</label>
-                                    <input type="password" placeholder="••••••••••••" style={inputStyle} />
+                                <button
+                                    onClick={checkCJConnection}
+                                    disabled={cjLoading}
+                                    style={{
+                                        padding: '8px 16px',
+                                        border: '1px solid #e5e5e5',
+                                        borderRadius: '8px',
+                                        backgroundColor: '#fff',
+                                        cursor: cjLoading ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        fontSize: '0.85rem'
+                                    }}
+                                >
+                                    <RefreshCw size={14} /> Refresh
+                                </button>
+                            </div>
+
+                            {/* Setup Instructions */}
+                            <div style={{
+                                padding: '20px',
+                                backgroundColor: '#f0f9ff',
+                                border: '1px solid #bae6fd',
+                                borderRadius: '12px'
+                            }}>
+                                <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 600, color: '#0369a1' }}>
+                                    How to set up CJ Dropshipping:
+                                </h3>
+                                <ol style={{ margin: 0, paddingLeft: '20px', color: '#0369a1', fontSize: '0.9rem', lineHeight: 1.8 }}>
+                                    <li>
+                                        Go to{' '}
+                                        <a
+                                            href="https://www.cjdropshipping.com/myCJ.html#/apikey"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ color: '#0369a1', fontWeight: 500 }}
+                                        >
+                                            CJ Dropshipping API Key page <ExternalLink size={12} style={{ display: 'inline' }} />
+                                        </a>
+                                    </li>
+                                    <li>Click "Generate" to create your API key</li>
+                                    <li>Copy the API key and paste it below</li>
+                                    <li>Click "Generate Token" to get your access token</li>
+                                    <li>Add the tokens to your <code style={{ backgroundColor: '#dbeafe', padding: '2px 6px', borderRadius: '4px' }}>.env.local</code> file</li>
+                                </ol>
+                            </div>
+
+                            {/* API Key Input */}
+                            <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                                    <div style={{
+                                        width: '48px',
+                                        height: '48px',
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        borderRadius: '10px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#fff',
+                                        fontWeight: 700,
+                                        fontSize: '1.2rem'
+                                    }}>
+                                        CJ
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: 600 }}>CJ Dropshipping</div>
+                                        <div style={{ fontSize: '0.85rem', color: '#888' }}>Import products and fulfill orders automatically</div>
+                                    </div>
+                                </div>
+
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={labelStyle}>API Key</label>
+                                    <input
+                                        type="text"
+                                        placeholder="CJUserNum@api@xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                        value={cjApiKey}
+                                        onChange={(e) => setCjApiKey(e.target.value)}
+                                        style={inputStyle}
+                                    />
+                                    <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                                        Your API key from the CJ Dropshipping developer portal
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={generateCJToken}
+                                    disabled={cjLoading || !cjApiKey}
+                                    style={{
+                                        padding: '12px 24px',
+                                        backgroundColor: cjLoading || !cjApiKey ? '#e5e5e5' : '#000',
+                                        color: cjLoading || !cjApiKey ? '#888' : '#fff',
+                                        border: 'none',
+                                        borderRadius: '10px',
+                                        fontSize: '0.9rem',
+                                        fontWeight: 500,
+                                        cursor: cjLoading || !cjApiKey ? 'not-allowed' : 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    {cjLoading ? (
+                                        <>
+                                            <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                                            Generating...
+                                        </>
+                                    ) : (
+                                        <>Generate Token</>
+                                    )}
+                                </button>
+
+                                {/* Token Info */}
+                                {cjTokenInfo && (
+                                    <div style={{
+                                        marginTop: '20px',
+                                        padding: '16px',
+                                        backgroundColor: '#f0fdf4',
+                                        borderRadius: '8px',
+                                        border: '1px solid #bbf7d0'
+                                    }}>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#166534', marginBottom: '12px' }}>
+                                            ✓ Token Generated Successfully
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: '#166534' }}>
+                                            <strong>Access Token:</strong> {cjTokenInfo.accessToken}
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: '#166534' }}>
+                                            <strong>Expires:</strong> {cjTokenInfo.expiresAt}
+                                        </div>
+                                        <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#15803d' }}>
+                                            Add these values to your <code>.env.local</code> file and restart the server.
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Margin Settings */}
+                            <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px' }}>
+                                <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 600 }}>Pricing Settings</h3>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                                    <div>
+                                        <label style={labelStyle}>Default Profit Margin (%)</label>
+                                        <input type="number" defaultValue="50" style={inputStyle} />
+                                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                                            Applied when importing products from CJ
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={labelStyle}>USD to INR Rate</label>
+                                        <input type="number" defaultValue="83" step="0.1" style={inputStyle} />
+                                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                                            Exchange rate for price conversion
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -268,6 +531,14 @@ export default function SettingsPage() {
                     )}
                 </div>
             </div>
+
+            {/* CSS for spinner animation */}
+            <style jsx global>{`
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </div>
     );
 }

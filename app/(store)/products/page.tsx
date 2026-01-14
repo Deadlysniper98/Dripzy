@@ -1,33 +1,100 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRight, ChevronDown, Heart, SlidersHorizontal } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronRight, ChevronDown, Heart, SlidersHorizontal, Loader2, Package } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
 import { useCart } from '@/context/CartContext';
 
-const PRODUCTS = [
-    { id: '1', name: 'MagSafe Wireless Charger', price: 2999, category: 'Chargers', subtitle: 'Electronics', colors: '3 Colors', image: 'https://images.unsplash.com/photo-1625591340248-6d2894ebd784?q=80&w=600' },
-    { id: '2', name: 'iPhone 15 Pro Max Case', price: 4500, category: 'Cases', subtitle: 'Protection', colors: '5 Colors', image: 'https://images.unsplash.com/photo-1603539947673-c6eb2934808f?q=80&w=600' },
-    { id: '3', name: 'USB-C Fast Charger 30W', price: 1999, category: 'Chargers', subtitle: 'Power Adapter', colors: '1 Color', image: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?q=80&w=600' },
-    { id: '4', name: 'iPad Air Folio Case', price: 5999, category: 'Cases', subtitle: 'Tablet Case', colors: '4 Colors', image: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=600' },
-    { id: '5', name: 'Noise Cancelling Headphones', price: 29999, category: 'Audio', subtitle: 'Over-Ear', colors: '2 Colors', image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=600' },
-    { id: '6', name: 'Braided Lightning Cable', price: 1499, category: 'Cables', subtitle: '2m Length', colors: '3 Colors', image: 'https://images.unsplash.com/photo-1572569028738-411a561109dc?q=80&w=600' },
-    { id: '7', name: 'Portable Power Bank 20000mAh', price: 3499, category: 'Power', subtitle: 'Fast Charging', colors: '2 Colors', image: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?q=80&w=600' },
-    { id: '8', name: 'Wireless Earbuds Pro', price: 12999, category: 'Audio', subtitle: 'True Wireless', colors: '3 Colors', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?q=80&w=600' },
-];
+interface Product {
+    id: string;
+    name: string;
+    slug: string;
+    price: number;
+    compareAtPrice?: number;
+    category: string;
+    subcategory?: string;
+    featuredImage: string;
+    variants: { key: string }[];
+    status: string;
+    isVisible: boolean;
+    currency?: string;
+}
 
-const CATEGORIES = ['All', 'Chargers', 'Cases', 'Audio', 'Cables', 'Power'];
+const CATEGORIES = ['All', 'Electronics', 'Clothing', 'Home', 'Audio', 'Chargers', 'Cases', 'Accessories'];
 
 export default function ProductsPage() {
+    const [products, setProducts] = useState<Product[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [category, setCategory] = useState('All');
     const [sortOpen, setSortOpen] = useState(false);
     const [sort, setSort] = useState('Latest');
     const { addItem } = useCart();
 
-    const filtered = category === 'All' ? PRODUCTS : PRODUCTS.filter(p => p.category === category);
+    // Fetch products from API
+    const fetchProducts = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            params.append('status', 'active'); // Only show active products
+            if (category !== 'All') {
+                params.append('category', category);
+            }
 
-    const handleQuickAdd = (product: typeof PRODUCTS[0]) => {
-        addItem({ id: product.id, name: product.name, price: product.price, image: product.image });
+            const res = await fetch(`/api/products?${params.toString()}`);
+            const data = await res.json();
+
+            if (data.success) {
+                // Filter to only show visible products
+                const visibleProducts = data.data.products.filter((p: Product) =>
+                    p.status === 'active' && p.isVisible !== false
+                );
+                setProducts(visibleProducts);
+            } else {
+                setError(data.error || 'Failed to load products');
+            }
+        } catch (err) {
+            console.error('Error fetching products:', err);
+            setError('Failed to load products');
+        } finally {
+            setLoading(false);
+        }
+    }, [category]);
+
+    useEffect(() => {
+        fetchProducts();
+    }, [fetchProducts]);
+
+    // Sort products
+    const sortedProducts = [...products].sort((a, b) => {
+        switch (sort) {
+            case 'Price: Low':
+                return a.price - b.price;
+            case 'Price: High':
+                return b.price - a.price;
+            case 'Popular':
+                return 0; // Would need popularity data
+            default:
+                return 0; // Latest - keep original order
+        }
+    });
+
+    const handleQuickAdd = (product: Product) => {
+        addItem({
+            id: product.id,
+            productId: product.id,
+            name: product.name,
+            price: product.price,
+            image: product.featuredImage,
+            currency: product.currency || 'USD'
+        });
+    };
+
+    // Get variant colors count
+    const getVariantText = (product: Product) => {
+        const count = product.variants?.length || 1;
+        return count === 1 ? '1 Variant' : `${count} Variants`;
     };
 
     return (
@@ -38,19 +105,17 @@ export default function ProductsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', fontSize: '0.85rem', color: '#888' }}>
                         <Link href="/" style={{ color: '#888', textDecoration: 'none' }}>Home page</Link>
                         <span>→</span>
-                        <Link href="/products" style={{ color: '#888', textDecoration: 'none' }}>Electronics</Link>
-                        <span>→</span>
                         <span style={{ color: '#000' }}>All Products</span>
                     </div>
 
                     {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
                         <h1 style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>
-                            Electronics & Accessories
+                            All Products
                         </h1>
                         <div style={{ textAlign: 'right' }}>
-                            <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '4px' }}>Electronics & Accessories</p>
-                            <p style={{ fontWeight: 600 }}>— {filtered.length} results</p>
+                            <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '4px' }}>Shop our collection</p>
+                            <p style={{ fontWeight: 600 }}>— {sortedProducts.length} results</p>
                         </div>
                     </div>
 
@@ -87,13 +152,6 @@ export default function ProductsPage() {
                                     {cat}
                                 </button>
                             ))}
-
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
-                                <span style={{ fontSize: '0.85rem', color: '#666' }}>Under ₹5,000</span>
-                                <div style={{ width: '80px', height: '2px', background: '#ddd', borderRadius: '2px', position: 'relative' }}>
-                                    <div style={{ position: 'absolute', left: '20%', right: '30%', height: '100%', background: '#000', borderRadius: '2px' }}></div>
-                                </div>
-                            </div>
                         </div>
 
                         {/* Right Side Controls */}
@@ -120,81 +178,182 @@ export default function ProductsPage() {
                         </div>
                     </div>
 
+                    {/* Loading State */}
+                    {loading && (
+                        <div style={{
+                            textAlign: 'center',
+                            padding: '80px 20px',
+                            color: '#888'
+                        }}>
+                            <Loader2 size={40} style={{ animation: 'spin 1s linear infinite', marginBottom: '16px' }} />
+                            <p>Loading products...</p>
+                        </div>
+                    )}
+
+                    {/* Error State */}
+                    {error && !loading && (
+                        <div style={{
+                            textAlign: 'center',
+                            padding: '80px 20px',
+                            backgroundColor: '#fef2f2',
+                            borderRadius: '16px',
+                            color: '#991b1b'
+                        }}>
+                            <p style={{ fontWeight: 500 }}>{error}</p>
+                            <button
+                                onClick={fetchProducts}
+                                style={{
+                                    marginTop: '16px',
+                                    padding: '12px 24px',
+                                    backgroundColor: '#000',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Empty State */}
+                    {!loading && !error && sortedProducts.length === 0 && (
+                        <div style={{
+                            textAlign: 'center',
+                            padding: '80px 20px',
+                            backgroundColor: '#f5f5f7',
+                            borderRadius: '16px'
+                        }}>
+                            <Package size={48} style={{ color: '#888', marginBottom: '16px' }} />
+                            <h3 style={{ margin: '0 0 8px', fontWeight: 600 }}>No products found</h3>
+                            <p style={{ color: '#888', margin: 0 }}>
+                                {category !== 'All'
+                                    ? `No products in the "${category}" category yet.`
+                                    : 'Products are being added to the store. Check back soon!'}
+                            </p>
+                        </div>
+                    )}
+
                     {/* Product Grid */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
-                        gap: '32px'
-                    }}>
-                        {filtered.map((product) => (
-                            <div key={product.id} style={{ position: 'relative' }}>
-                                <Link href={`/product/${product.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                    <div style={{
-                                        aspectRatio: '1',
-                                        backgroundColor: '#f0f0f0',
-                                        borderRadius: '16px',
+                    {!loading && !error && sortedProducts.length > 0 && (
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '32px'
+                        }}>
+                            {sortedProducts.map((product) => (
+                                <div key={product.id} style={{ position: 'relative' }}>
+                                    <Link href={`/product/${product.slug || product.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                        <div style={{
+                                            aspectRatio: '1',
+                                            backgroundColor: '#f0f0f0',
+                                            borderRadius: '16px',
+                                            overflow: 'hidden',
+                                            marginBottom: '16px',
+                                            position: 'relative'
+                                        }}>
+                                            <img
+                                                src={product.featuredImage || 'https://via.placeholder.com/600?text=Product'}
+                                                alt={product.name}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.3s' }}
+                                                className="product-img"
+                                            />
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); }}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '12px',
+                                                    right: '12px',
+                                                    width: '36px',
+                                                    height: '36px',
+                                                    borderRadius: '50%',
+                                                    background: '#fff',
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                <Heart size={18} />
+                                            </button>
+
+                                            {/* Compare At Price Badge */}
+                                            {product.compareAtPrice && product.compareAtPrice > product.price && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '12px',
+                                                    left: '12px',
+                                                    padding: '4px 10px',
+                                                    backgroundColor: '#ef4444',
+                                                    color: '#fff',
+                                                    borderRadius: '50px',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600
+                                                }}>
+                                                    {Math.round((1 - product.price / product.compareAtPrice) * 100)}% OFF
+                                                </div>
+                                            )}
+                                        </div>
+                                    </Link>
+
+                                    <h3 style={{
+                                        fontSize: '1rem',
+                                        fontWeight: 600,
+                                        marginBottom: '4px',
                                         overflow: 'hidden',
-                                        marginBottom: '16px',
-                                        position: 'relative'
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
                                     }}>
-                                        <img
-                                            src={product.image}
-                                            alt={product.name}
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.3s' }}
-                                            className="product-img"
-                                        />
+                                        {product.name}
+                                    </h3>
+                                    <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '2px' }}>{product.category}</p>
+                                    <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '8px' }}>{getVariantText(product)}</p>
+
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <span style={{ fontWeight: 600 }}>₹{product.price.toLocaleString('en-IN')}</span>
+                                            {product.compareAtPrice && product.compareAtPrice > product.price && (
+                                                <span style={{
+                                                    marginLeft: '8px',
+                                                    fontSize: '0.85rem',
+                                                    color: '#888',
+                                                    textDecoration: 'line-through'
+                                                }}>
+                                                    ₹{product.compareAtPrice.toLocaleString('en-IN')}
+                                                </span>
+                                            )}
+                                        </div>
                                         <button
-                                            onClick={(e) => { e.preventDefault(); }}
+                                            onClick={() => handleQuickAdd(product)}
                                             style={{
-                                                position: 'absolute',
-                                                top: '12px',
-                                                right: '12px',
-                                                width: '36px',
-                                                height: '36px',
-                                                borderRadius: '50%',
-                                                background: '#fff',
+                                                background: 'none',
                                                 border: 'none',
+                                                fontSize: '0.85rem',
+                                                color: '#000',
                                                 cursor: 'pointer',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                                textDecoration: 'underline',
+                                                fontWeight: 500
                                             }}
                                         >
-                                            <Heart size={18} />
+                                            Add to cart
                                         </button>
                                     </div>
-                                </Link>
-
-                                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '4px' }}>{product.name}</h3>
-                                <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '2px' }}>{product.subtitle}</p>
-                                <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '8px' }}>{product.colors}</p>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontWeight: 600 }}>₹{product.price.toLocaleString('en-IN')}</span>
-                                    <button
-                                        onClick={() => handleQuickAdd(product)}
-                                        style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            fontSize: '0.85rem',
-                                            color: '#000',
-                                            cursor: 'pointer',
-                                            textDecoration: 'underline',
-                                            fontWeight: 500
-                                        }}
-                                    >
-                                        Add to cart
-                                    </button>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </section>
             </div>
 
             <style>{`
                 .product-img:hover { transform: scale(1.05); }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
                 @media (max-width: 900px) {
                     section > div:last-child { grid-template-columns: repeat(2, 1fr) !important; }
                 }

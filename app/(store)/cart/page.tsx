@@ -4,13 +4,15 @@ import { useCart } from '@/context/CartContext';
 import { Trash2, Plus, Minus, ChevronRight, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { useCurrency } from '@/context/CurrencyContext';
 
 export default function CartPage() {
     const { items, updateQuantity, removeItem, cartTotal } = useCart();
+    const { formatPrice, formatRawPrice, currency } = useCurrency();
     const [voucher, setVoucher] = useState('');
     const [discount, setDiscount] = useState(0);
 
-    const deliveryFee = items.length > 0 ? 99 : 0;
+    const deliveryFee = items.length > 0 ? (currency === 'USD' ? 5 : 99) : 0;
     const subtotal = cartTotal;
     const total = subtotal - discount + deliveryFee;
 
@@ -199,7 +201,7 @@ export default function CartPage() {
 
                                     {/* Price */}
                                     <div style={{ textAlign: 'right', fontWeight: 600 }}>
-                                        ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                                        {formatPrice(item.price * item.quantity, (item.currency as any) || 'USD')}
                                     </div>
 
                                     {/* Delete */}
@@ -307,7 +309,7 @@ export default function CartPage() {
                                     fontSize: '0.95rem'
                                 }}>
                                     <span style={{ color: '#666' }}>Sub Total</span>
-                                    <span style={{ fontWeight: 500 }}>₹{subtotal.toLocaleString('en-IN')}</span>
+                                    <span style={{ fontWeight: 500 }}>{formatRawPrice(subtotal)}</span>
                                 </div>
                                 {discount > 0 && (
                                     <div style={{
@@ -317,7 +319,7 @@ export default function CartPage() {
                                         color: '#22c55e'
                                     }}>
                                         <span>Discount (10%)</span>
-                                        <span>-₹{discount.toLocaleString('en-IN')}</span>
+                                        <span>-{formatRawPrice(discount)}</span>
                                     </div>
                                 )}
                                 <div style={{
@@ -326,7 +328,7 @@ export default function CartPage() {
                                     fontSize: '0.95rem'
                                 }}>
                                     <span style={{ color: '#666' }}>Delivery fee</span>
-                                    <span style={{ fontWeight: 500 }}>₹{deliveryFee}</span>
+                                    <span style={{ fontWeight: 500 }}>{formatRawPrice(deliveryFee)}</span>
                                 </div>
                             </div>
 
@@ -339,7 +341,7 @@ export default function CartPage() {
                             }}>
                                 <span style={{ fontWeight: 500 }}>Total</span>
                                 <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>
-                                    ₹{total.toLocaleString('en-IN')}
+                                    {formatRawPrice(total)}
                                 </span>
                             </div>
 

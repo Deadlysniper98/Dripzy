@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && 
+             request.auth.token.email in [
+               'admin@dripzy.in',
+               'dasmesh@dripzy.in',
+               'splashtheclash@gmail.com'
+             ];
+    }
+    
+    // Products - public read, admin write
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if true;  // Temporarily open for development
+    }
+    
+    // Orders - anyone can create, admin can manage
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+    
+    // Users - open for now
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    
+    // Settings - admin only
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Categories - public read, admin write
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

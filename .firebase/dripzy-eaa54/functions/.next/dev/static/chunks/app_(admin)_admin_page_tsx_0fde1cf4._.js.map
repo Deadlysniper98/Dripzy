@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///Users/dasmesh/Documents/Git%20Hub/dropship-store/app/%28admin%29/admin/page.tsx"],"sourcesContent":["'use client';\n\nimport { useEffect } from 'react';\nimport { useRouter } from 'next/navigation';\n\nexport default function AdminPage() {\n    const router = useRouter();\n\n    useEffect(() => {\n        // Redirect to dashboard\n        router.replace('/admin/dashboard');\n    }, [router]);\n\n    return (\n        <div style={{\n            display: 'flex',\n            alignItems: 'center',\n            justifyContent: 'center',\n            minHeight: '60vh'\n        }}>\n            <p style={{ color: '#888' }}>Redirecting to dashboard...</p>\n        </div>\n    );\n}\n"],"names":[],"mappings":";;;;;AAEA;AACA;;;AAHA;;;AAKe,SAAS;;IACpB,MAAM,SAAS,IAAA,kJAAS;IAExB,IAAA,0KAAS;+BAAC;YACN,wBAAwB;YACxB,OAAO,OAAO,CAAC;QACnB;8BAAG;QAAC;KAAO;IAEX,qBACI,6LAAC;QAAI,OAAO;YACR,SAAS;YACT,YAAY;YACZ,gBAAgB;YAChB,WAAW;QACf;kBACI,cAAA,6LAAC;YAAE,OAAO;gBAAE,OAAO;YAAO;sBAAG;;;;;;;;;;;AAGzC;GAlBwB;;QACL,kJAAS;;;KADJ"}}]
+}

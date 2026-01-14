@@ -2,17 +2,25 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ShoppingBag, Search, User, Menu, X } from 'lucide-react';
+import { ShoppingBag, Search, User, Menu, X, Loader2, ChevronDown } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
+import { useCurrency } from '@/context/CurrencyContext';
+import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export const Header = () => {
     const { cartCount, toggleDrawer: toggleCart } = useCart();
+    const { currency, setCurrency, formatPrice } = useCurrency();
     const [scrolled, setScrolled] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     const [promoImage, setPromoImage] = useState('https://images.unsplash.com/photo-1592833159057-65a284572b25?q=80&w=2600&auto=format&fit=crop');
     const [promoTitle, setPromoTitle] = useState('Explore Electronics');
+
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [searching, setSearching] = useState(false);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -21,6 +29,35 @@ export const Header = () => {
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
+
+    useEffect(() => {
+        const performSearch = async () => {
+            if (!searchQuery.trim()) {
+                setSearchResults([]);
+                return;
+            }
+            setSearching(true);
+            try {
+                const q = query(
+                    collection(db, 'products'),
+                    where('status', '==', 'active'),
+                    limit(20)
+                );
+                const snapshot = await getDocs(q);
+                const results = snapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter((p: any) => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                setSearchResults(results.slice(0, 5));
+            } catch (error) {
+                console.error('Search error:', error);
+            } finally {
+                setSearching(false);
+            }
+        };
+
+        const timer = setTimeout(performSearch, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     const toggleMobileMenu = () => {
         setMobileMenuOpen(!mobileMenuOpen);
@@ -83,6 +120,25 @@ export const Header = () => {
                     </div>
 
                     <div className="af-nav-right">
+                        <div style={{ marginRight: '16px', borderRight: '1px solid #eee', paddingRight: '16px', display: 'flex', alignItems: 'center' }}>
+                            <button
+                                onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
+                                style={{
+                                    background: '#f5f5f7',
+                                    border: 'none',
+                                    padding: '6px 12px',
+                                    borderRadius: '50px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                }}
+                            >
+                                {currency} <ChevronDown size={14} />
+                            </button>
+                        </div>
                         <button className="af-action-link" onClick={() => setSearchOpen(true)} aria-label="Search">
                             <Search size={20} strokeWidth={1.8} />
                         </button>
@@ -122,16 +178,50 @@ export const Header = () => {
                 <div className="af-search-container">
                     <button className="af-search-close-top" onClick={() => setSearchOpen(false)}>Close <X size={14} /></button>
                     <div className="af-search-input-wrap">
-                        <input type="text" className="af-search-input" placeholder="Search products..." autoFocus={searchOpen} />
+                        <input
+                            type="text"
+                            className="af-search-input"
+                            placeholder="Search products..."
+                            autoFocus={searchOpen}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        {searching && <Loader2 className="af-search-loading" size={20} style={{ animation: 'af-spin 1s linear infinite' }} />}
                     </div>
-                    <div className="af-search-suggestions">
-                        <div>
-                            <span className="af-search-col-title">Trending</span>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                <Link href="#" className="af-search-tag">Wireless Charger</Link>
-                                <Link href="#" className="af-search-tag">iPhone 15 Case</Link>
+
+                    <div className="af-search-results-container">
+                        {searchResults.length > 0 ? (
+                            <div className="af-search-results-list">
+                                <span className="af-search-col-title">Top Matches</span>
+                                {searchResults.map((p) => (
+                                    <Link
+                                        key={p.id}
+                                        href={`/product/${p.slug || p.id}`}
+                                        className="af-search-result-item"
+                                        onClick={() => setSearchOpen(false)}
+                                    >
+                                        <div className="af-search-result-img">
+                                            <img src={p.featuredImage} alt="" />
+                                        </div>
+                                        <div className="af-search-result-info">
+                                            <span className="af-search-result-name">{p.name}</span>
+                                            <span className="af-search-result-price">{formatPrice(p.price, (p.currency as any) || 'USD')}</span>
+                                        </div>
+                                    </Link>
+                                ))}
                             </div>
-                        </div>
+                        ) : searchQuery.trim() && !searching ? (
+                            <div className="af-search-empty">No products found for "{searchQuery}"</div>
+                        ) : (
+                            <div className="af-search-suggestions">
+                                <span className="af-search-col-title">Trending</span>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <button onClick={() => setSearchQuery('Charger')} className="af-search-tag">Wireless Charger</button>
+                                    <button onClick={() => setSearchQuery('Case')} className="af-search-tag">iPhone 15 Case</button>
+                                    <button onClick={() => setSearchQuery('Audio')} className="af-search-tag">Headphones</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

@@ -1,14 +1,18 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useCurrency } from './CurrencyContext';
 
 export type CartItem = {
-    id: string;
+    id: string; // Composite ID: productId-variantId
+    productId: string;
+    variantId?: string;
+    variantName?: string;
     name: string;
     price: number;
     image: string;
     quantity: number;
-    // Variant options could go here
+    currency?: string;
 };
 
 interface CartContextType {
@@ -43,7 +47,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
     // Save cart to local storage whenever it changes
     useEffect(() => {
-        localStorage.setItem('dripzy_cart', JSON.stringify(items));
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('dripzy_cart', JSON.stringify(items));
+        }
     }, [items]);
 
     const addItem = (newItem: Omit<CartItem, 'quantity'>) => {
@@ -77,8 +83,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
     const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
 
+    const { currency: currentCurrency, convertPrice } = useCurrency();
+
     const cartCount = items.reduce((acc, item) => acc + item.quantity, 0);
-    const cartTotal = items.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    const cartTotal = items.reduce((sum, item) => {
+        const itemConvertedPrice = convertPrice(item.price, (item.currency as any) || 'USD', currentCurrency);
+        return sum + (itemConvertedPrice * item.quantity);
+    }, 0);
 
     return (
         <CartContext.Provider
