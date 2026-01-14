@@ -543,9 +543,10 @@ export default function CheckoutPage() {
                                 <label style={{ fontSize: '0.75rem', color: '#888', marginBottom: '4px', display: 'block' }}>Change Shipping Method</label>
                                 <select
                                     style={{ ...inputStyle, padding: '8px', fontSize: '0.8rem' }}
-                                    value={selectedRate?.code || ''}
+                                    value={selectedRate?.code || selectedRate?.name || ''}
                                     onChange={(e) => {
-                                        const rate = shippingRates.find(r => r.code === e.target.value);
+                                        const val = e.target.value;
+                                        const rate = shippingRates.find(r => (r.code && r.code === val) || r.name === val);
                                         if (rate) setSelectedRate(rate);
                                     }}
                                 >

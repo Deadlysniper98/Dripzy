@@ -1,3 +1,0 @@
-module.exports=[14921,a=>{"use strict";var b=a.i(87924),c=a.i(72131),d=a.i(50944);function e(){let a=(0,d.useRouter)();return(0,c.useEffect)(()=>{a.replace("/admin/dashboard")},[a]),(0,b.jsx)("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"60vh"},children:(0,b.jsx)("p",{style:{color:"#888"},children:"Redirecting to dashboard..."})})}a.s(["default",()=>e])}];
-
-//# sourceMappingURL=app_%28admin%29_admin_page_tsx_738c0ced._.js.map

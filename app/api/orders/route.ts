@@ -114,6 +114,44 @@ export async function POST(request: NextRequest) {
             updatedAt: Timestamp.now(),
         });
 
+        // Auto-sync with CJ Dropshipping
+        try {
+            console.log('Attempting to sync with CJ Dropshipping...');
+            const { cjClient } = await import('@/lib/cj-client');
+
+            // Only try if we have valid items with variant IDs
+            const cjItems = items.filter((i: any) => i.variantId);
+
+            if (cjItems.length > 0) {
+                const cjResult = await cjClient.createOrder({
+                    orderNumber: orderNumber,
+                    shippingCountry: orderData.shippingAddress.country,
+                    shippingCountryCode: orderData.shippingAddress.countryCode,
+                    shippingProvince: orderData.shippingAddress.state,
+                    shippingCity: orderData.shippingAddress.city,
+                    shippingAddress: orderData.shippingAddress.address,
+                    shippingZip: orderData.shippingAddress.pincode,
+                    shippingPhone: orderData.customer.phone,
+                    shippingCustomerName: orderData.customer.name,
+                    products: cjItems.map((i: any) => ({
+                        vid: i.variantId,
+                        quantity: i.quantity
+                    }))
+                });
+
+                if (cjResult && cjResult.orderId) {
+                    console.log('Successfully synced with CJ. CJ Order ID:', cjResult.orderId);
+                    orderData.cjOrderId = cjResult.orderId;
+                    orderData.fulfillmentStatus = 'pending'; // Mark as pending fulfillment
+                }
+            } else {
+                console.log('No valid CJ items (missing variantId) to sync.');
+            }
+        } catch (cjError) {
+            console.error('Failed to auto-sync with CJ:', cjError);
+            // We continue to save the order to our DB even if CJ sync fails
+        }
+
         console.log('Saving order to Firestore:', JSON.stringify(orderData, null, 2));
 
         const docRef = await addDoc(collection(db, 'orders'), orderData);
