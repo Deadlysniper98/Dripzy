@@ -3,11 +3,12 @@ import { cjClient } from '@/lib/cj-client';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { convertCJProductToProduct, generateSlug } from '@/lib/types/product';
+import { uploadImageFromUrl } from '@/lib/storage-utils';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { cjProductId, marginPercent = 50, status = 'draft' } = body;
+        const { cjProductId, marginPercent = 50, status = 'draft', fast = false } = body;
 
         if (!cjProductId) {
             return NextResponse.json(
@@ -41,6 +42,12 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Filter images if selectedImages is provided
+        let imagesToImport = cjProduct.productImages;
+        if (body.selectedImages && Array.isArray(body.selectedImages) && body.selectedImages.length > 0) {
+            imagesToImport = body.selectedImages;
+        }
+
         // Convert to our product format
         const productData = convertCJProductToProduct(
             {
@@ -55,10 +62,10 @@ export async function POST(request: NextRequest) {
                     variantLength: v.variantLength,
                     variantWidth: v.variantWidth,
                     variantHeight: v.variantHeight,
+                    variantImage: v.variantImage,
                     inventories: v.inventories,
                 })),
-                productImages: cjProduct.productImages,
-                productImageSet: cjProduct.productImageSet,
+                productImages: imagesToImport,
             },
             marginPercent
         );
@@ -94,6 +101,108 @@ export async function POST(request: NextRequest) {
             }
         }
         productData.slug = slug;
+
+        // Process images: Upload to Firebase Storage
+        if (!fast && productData.images && productData.images.length > 0) {
+            try {
+                const uploadPromises = productData.images.map(async (img, index) => {
+                    const fileName = `${productData.slug}-${index + 1}.jpg`;
+                    const destinationPath = `products/${productData.slug}/${fileName}`;
+
+                    try {
+                        const newUrl = await uploadImageFromUrl(img.url, destinationPath);
+                        return { ...img, url: newUrl };
+                    } catch (err) {
+                        console.error(`Failed to upload image ${img.url}:`, err);
+                        return img; // Keep original URL if upload fails
+                    }
+                });
+
+                const updatedImages = await Promise.all(uploadPromises);
+                productData.images = updatedImages;
+
+                // Update featured image to point to the new URL of the first image
+                if (updatedImages.length > 0) {
+                    productData.featuredImage = updatedImages[0].url;
+                }
+            } catch (imageError) {
+                console.error('Error processing product images:', imageError);
+                // Continue with import even if image processing fails partially
+            }
+        }
+
+        // Process variant images: Upload to Firebase Storage
+        if (!fast && productData.variants && productData.variants.length > 0) {
+            try {
+                const variantUploadPromises = productData.variants.map(async (variant, index) => {
+                    if (!variant.image || variant.image.includes('firebasestorage.googleapis.com')) {
+                        return variant;
+                    }
+
+                    const fileName = `${productData.slug}-variant-${index + 1}.jpg`;
+                    const destinationPath = `products/${productData.slug}/variants/${fileName}`;
+
+                    try {
+                        const newUrl = await uploadImageFromUrl(variant.image, destinationPath);
+                        return { ...variant, image: newUrl };
+                    } catch (err) {
+                        console.error(`Failed to upload variant image ${variant.image}:`, err);
+                        return variant; // Keep original URL if upload fails
+                    }
+                });
+
+                const updatedVariants = await Promise.all(variantUploadPromises);
+                productData.variants = updatedVariants;
+            } catch (variantImageError) {
+                console.error('Error processing variant images:', variantImageError);
+            }
+        }
+
+        // Process description images: Upload to Firebase Storage
+        if (!fast && productData.description) {
+            try {
+                // Find all image URLs in the description
+                const imgRegex = /<img[^>]+src="([^">]+)"/g;
+                const matches = Array.from(productData.description.matchAll(imgRegex));
+
+                if (matches.length > 0) {
+                    let updatedDescription = productData.description;
+                    const descUploadPromises = matches.map(async (match, index) => {
+                        const originalUrl = match[1];
+
+                        // Skip if already a Firebase URL or external but somehow handled
+                        if (!originalUrl || originalUrl.includes('firebasestorage.googleapis.com') || originalUrl.startsWith('data:')) {
+                            return { original: originalUrl, updated: originalUrl };
+                        }
+
+                        const fileName = `${productData.slug}-desc-${index + 1}.jpg`;
+                        const destinationPath = `products/${productData.slug}/description/${fileName}`;
+
+                        try {
+                            const newUrl = await uploadImageFromUrl(originalUrl, destinationPath);
+                            return { original: originalUrl, updated: newUrl };
+                        } catch (err) {
+                            console.error(`Failed to upload description image ${originalUrl}:`, err);
+                            return { original: originalUrl, updated: originalUrl }; // Keep original on failure
+                        }
+                    });
+
+                    const results = await Promise.all(descUploadPromises);
+
+                    // Replace original URLs with the new Firebase URLs
+                    results.forEach(res => {
+                        if (res.original !== res.updated) {
+                            // Use a simple replace (might replace multiple occurrences of same image which is actually good)
+                            updatedDescription = updatedDescription.split(res.original).join(res.updated);
+                        }
+                    });
+
+                    productData.description = updatedDescription;
+                }
+            } catch (descImageError) {
+                console.error('Error processing description images:', descImageError);
+            }
+        }
 
         // Save to Firebase
         const docRef = await addDoc(collection(db, 'products'), {

@@ -11,93 +11,38 @@ interface CategoryGridProps {
 }
 
 const DEFAULT_CATEGORIES = [
-    { name: 'Chargers', link: '/products?category=Chargers', image: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0' },
-    { name: 'Cases', link: '/products?category=Cases', image: 'https://images.unsplash.com/photo-1603539947673-c6eb2934808f' },
-    { name: 'Audio', link: '/products?category=Audio', image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e' },
+    { name: 'Tech Accessories', link: '/products?category=Accessories', image: '/tech_accessories.png' },
+    { name: 'Bags & Wallets', link: '/products?category=Bags', image: '/bags_wallets.png' },
+    { name: 'Work Essentials', link: '/products?category=Work', image: '/work_essentials.png' },
 ];
 
 export const CategoryGrid = ({ categories }: CategoryGridProps) => {
-    const data = categories || DEFAULT_CATEGORIES;
+    const data = (categories && categories.length > 0) ? categories : DEFAULT_CATEGORIES;
 
     return (
-        <section style={{
-            maxWidth: '1440px',
-            margin: '0 auto',
-            padding: '40px 20px',
-            boxSizing: 'border-box'
-        }}>
-            <div style={{
-                display: 'grid',
-                gap: '24px',
-                gridTemplateColumns: `repeat(${Math.min(data.length, 3)}, 1fr)`
-            }}>
+        <section className="af-category-section">
+            <div className="af-category-grid" style={{ '--cols': Math.min(data.length, 3) } as React.CSSProperties}>
                 {data.map((cat, idx) => (
                     <Link
                         key={idx}
                         href={cat.link}
-                        style={{
-                            position: 'relative',
-                            background: '#fff',
-                            borderRadius: '24px',
-                            overflow: 'hidden',
-                            textDecoration: 'none',
-                            display: 'block',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-                        }}
-                        className="category-card"
+                        className="af-category-card"
                     >
-                        <div style={{ width: '100%', overflow: 'hidden' }}>
+                        <div className="af-category-image-wrapper">
                             <img
                                 src={cat.image}
                                 alt={cat.name}
-                                style={{
-                                    width: '100%',
-                                    height: 'auto',
-                                    aspectRatio: '4/3',
-                                    objectFit: 'cover',
-                                    display: 'block',
-                                    transition: 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
-                                }}
-                                className="category-image"
+                                className="af-category-image"
                             />
+                            <div className="af-category-overlay"></div>
                         </div>
-                        <div
-                            style={{
-                                position: 'absolute',
-                                bottom: '24px',
-                                left: '24px',
-                                background: 'rgba(255, 255, 255, 0.95)',
-                                padding: '10px 24px',
-                                borderRadius: '16px',
-                                fontSize: '1rem',
-                                fontWeight: 700,
-                                color: '#000',
-                                backdropFilter: 'blur(10px)',
-                                boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
-                            }}
-                        >
-                            {cat.name}
+                        <div className="af-category-content">
+                            <h3 className="af-category-title">{cat.name}</h3>
+                            <span className="af-category-shop-now">Shop Now</span>
                         </div>
                     </Link>
                 ))}
             </div>
-
-            <style jsx>{`
-                .category-card:hover {
-                    transform: translateY(-8px);
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.08) !important;
-                }
-                .category-card:hover .category-image {
-                    transform: scale(1.08);
-                }
-                @media (max-width: 1024px) {
-                    div { grid-template-columns: repeat(2, 1fr) !important; }
-                }
-                @media (max-width: 640px) {
-                    div { grid-template-columns: 1fr !important; }
-                }
-            `}</style>
         </section>
     );
 };

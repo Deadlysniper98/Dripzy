@@ -97,7 +97,7 @@ export function calculateRetailPrice(costPrice: number, marginPercent: number = 
 }
 
 // Helper to clean CJ URLs
-function cleanCjUrl(url: string | undefined): string {
+export function cleanCjUrl(url: string | undefined): string {
     if (!url) return '';
     if (url.startsWith('//')) return `https:${url}`;
     if (url.startsWith('http://')) return url.replace('http://', 'https://');
@@ -125,6 +125,7 @@ export function convertCJProductToProduct(
             variantLength?: number;
             variantWidth?: number;
             variantHeight?: number;
+            variantImage?: string;
             inventories?: { totalInventory: number }[];
         }[];
         productImages?: string[];
@@ -176,6 +177,7 @@ export function convertCJProductToProduct(
             height: v.variantHeight || 0,
         } : undefined,
         stock: v.inventories?.[0]?.totalInventory || 0,
+        image: cleanCjUrl(v.variantImage),
     })) || [];
 
     const totalStock = variants.reduce((sum, v) => sum + v.stock, 0) || 100;

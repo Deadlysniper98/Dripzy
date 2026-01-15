@@ -61,6 +61,7 @@ export interface CJVariant {
     variantWeight: number;
     variantSellPrice: number;
     variantSugSellPrice?: number;
+    variantImage?: string;
     inventories?: CJInventory[];
 }
 
@@ -174,8 +175,10 @@ class CJDropshippingClient {
         console.log(`[CJ-API] Response Code: ${data.code}, Result: ${data.result}`);
 
         if (!res.ok || data.code !== 200) {
-            console.error('CJ API Error:', data);
-            throw new Error(data.message || `CJ API Error: ${res.statusText}`);
+            console.error('[CJ-API] Error Full Data:', JSON.stringify(data, null, 2));
+            const error = new Error(data.message || `CJ API Error: ${res.statusText}`);
+            (error as any).fullData = data;
+            throw error;
         }
 
         return data;
@@ -441,27 +444,44 @@ class CJDropshippingClient {
         orderId: string;
         orderNum: string;
         totalAmount: number;
+        _sentPayload?: any;
     }> {
         const body = {
             orderNumber: params.orderNumber,
-            shippingZip: params.shippingZip,
+            shippingZip: params.shippingZip || '0000',
+            zip: params.shippingZip || '0000',
             shippingCountry: params.shippingCountry,
             shippingCountryCode: params.shippingCountryCode,
-            shippingProvince: params.shippingProvince,
-            shippingCity: params.shippingCity,
-            shippingAddress: params.shippingAddress,
+            countryCode: params.shippingCountryCode, // Alias for countryCode
+            shippingProvince: params.shippingProvince || params.shippingCity || 'N/A',
+            province: params.shippingProvince || params.shippingCity || 'N/A',
+            shippingCity: params.shippingCity || params.shippingProvince || 'N/A',
+            city: params.shippingCity || params.shippingProvince || 'N/A',
+            shippingAddress: params.shippingAddress || 'N/A',
+            address: params.shippingAddress || 'N/A',
             shippingAddress2: params.shippingAddress2 || '',
-            shippingCustomerName: params.shippingCustomerName,
-            shippingPhone: params.shippingPhone,
-            products: params.products.map(p => ({
+            shippingCustomerName: params.shippingCustomerName || 'Customer',
+            customerName: params.shippingCustomerName || 'Customer',
+            shippingPhone: params.shippingPhone || '0000000000',
+            customerPhone: params.shippingPhone || '0000000000',
+            fromCountryCode: 'CN', // Origin
+            sourceCountryCode: 'CN', // Alias
+            startCountryCode: 'CN', // For freight calculation
+            destCountryCode: params.shippingCountryCode, // For freight calculation
+            payType: 2, // Balance payment
+            platform: 'others',
+            products: params.products.map((p: any) => ({
                 vid: p.vid,
                 quantity: p.quantity,
+                countryCode: params.shippingCountryCode, // Some versions expect it here too
             })),
-            payType: 2, // Use balance payment
-            platform: 'others',
             logisticName: params.logisticName || '',
             remark: params.remark || '',
         };
+
+        console.log('--- CJ ORDER PAYLOAD START ---');
+        console.log(JSON.stringify(body, null, 2));
+        console.log('--- CJ ORDER PAYLOAD END ---');
 
         const response = await this.request<{
             orderId: string;
@@ -475,7 +495,10 @@ class CJDropshippingClient {
             }
         );
 
-        return response.data;
+        return {
+            ...response.data,
+            _sentPayload: body // Return for debugging
+        };
     }
 
     /**

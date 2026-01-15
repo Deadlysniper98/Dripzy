@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy, limit, where, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, where, addDoc, Timestamp, doc, updateDoc, increment } from 'firebase/firestore';
 
 // GET: List all orders with filtering
 export async function GET(request: NextRequest) {
@@ -15,6 +15,12 @@ export async function GET(request: NextRequest) {
             constraints.push(where('status', '==', status));
         }
 
+        // Filter by userId if provided
+        const userId = searchParams.get('userId');
+        if (userId) {
+            constraints.push(where('userId', '==', userId));
+        }
+
         constraints.push(orderBy('createdAt', 'desc'));
         constraints.push(limit(pageSize));
 
@@ -24,8 +30,12 @@ export async function GET(request: NextRequest) {
         const orders = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || null,
-            updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || null,
+            createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ||
+                (typeof doc.data().createdAt === 'string' ? doc.data().createdAt : null) ||
+                (typeof doc.data().createdAt === 'number' ? new Date(doc.data().createdAt).toISOString() : null) || null,
+            updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() ||
+                (typeof doc.data().updatedAt === 'string' ? doc.data().updatedAt : null) ||
+                (typeof doc.data().updatedAt === 'number' ? new Date(doc.data().updatedAt).toISOString() : null) || null,
         }));
 
         return NextResponse.json({
@@ -55,6 +65,7 @@ export async function POST(request: NextRequest) {
         console.log('Received order request:', JSON.stringify(body, null, 2));
 
         const {
+            userId, // Get userId from request
             customer,
             email,
             phone,
@@ -77,6 +88,7 @@ export async function POST(request: NextRequest) {
 
         const orderData = cleanData({
             orderNumber,
+            userId: userId || null, // Store userId if present
             customer: {
                 name: customer || '',
                 email: email || '',
@@ -156,6 +168,23 @@ export async function POST(request: NextRequest) {
 
         const docRef = await addDoc(collection(db, 'orders'), orderData);
         console.log('Order saved successfully with ID:', docRef.id);
+
+        // Increment totalSales for each product in the order
+        try {
+            console.log('Incrementing totalSales for products...');
+            const { increment } = await import('firebase/firestore');
+            for (const item of orderData.items) {
+                if (item.productId) {
+                    const productRef = doc(db, 'products', item.productId);
+                    await updateDoc(productRef, {
+                        totalSales: increment(item.quantity)
+                    });
+                }
+            }
+        } catch (salesIncrementError) {
+            console.error('Failed to increment totalSales:', salesIncrementError);
+            // Non-critical, continue
+        }
 
         return NextResponse.json({
             success: true,

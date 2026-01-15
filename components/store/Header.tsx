@@ -3,17 +3,21 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ShoppingBag, Search, User, Menu, X, Loader2, ChevronDown } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useCurrency } from '@/context/CurrencyContext';
-import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 
 export const Header = () => {
+    const pathname = usePathname();
     const { cartCount, toggleDrawer: toggleCart } = useCart();
-    const { currency, setCurrency, formatPrice } = useCurrency();
+    const { currency, setCurrency, formatPrice, countryCode } = useCurrency();
     const [scrolled, setScrolled] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+    const [themeConfig, setThemeConfig] = useState<any>(null);
 
     const [promoImage, setPromoImage] = useState('https://images.unsplash.com/photo-1592833159057-65a284572b25?q=80&w=2600&auto=format&fit=crop');
     const [promoTitle, setPromoTitle] = useState('Explore Electronics');
@@ -23,11 +27,34 @@ export const Header = () => {
     const [searching, setSearching] = useState(false);
 
     useEffect(() => {
+        const fetchTheme = async () => {
+            try {
+                const themeDoc = await getDoc(doc(db, 'settings', 'theme'));
+                if (themeDoc.exists()) {
+                    setThemeConfig(themeDoc.data());
+                }
+            } catch (error) {
+                console.error('Error fetching theme in header:', error);
+            }
+        };
+        fetchTheme();
+    }, []);
+
+    useEffect(() => {
         const handleScroll = () => {
             setScrolled(window.scrollY > 30);
         };
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth <= 768);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
     useEffect(() => {
@@ -60,6 +87,8 @@ export const Header = () => {
     }, [searchQuery]);
 
     const toggleMobileMenu = () => {
+        // Only toggle mobile menu on mobile devices
+        if (!isMobile) return;
         setMobileMenuOpen(!mobileMenuOpen);
         document.body.classList.toggle('af-drawer-active', !mobileMenuOpen);
     };
@@ -69,9 +98,28 @@ export const Header = () => {
         setPromoTitle(title);
     };
 
+    const hasAnnouncement = themeConfig?.announcement?.enabled;
+
+    if (pathname === '/checkout') return null;
+
     return (
-        <div className="af-header-system">
-            <div className={`af-navbar-wrap ${scrolled ? 'scrolled' : ''}`}>
+        <div className={`af-header-system ${hasAnnouncement ? 'has-announcement' : ''}`}>
+            {hasAnnouncement && (
+                <div className="af-announcement-bar" style={{
+                    backgroundColor: themeConfig.announcement.backgroundColor || '#000',
+                    color: '#fff',
+                    padding: '10px',
+                    textAlign: 'center',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    position: 'relative',
+                    zIndex: 1100
+                }}>
+                    {themeConfig.announcement.text}
+                </div>
+            )}
+            <div className={`af-navbar-wrap ${scrolled ? 'scrolled' : ''}`} style={{ top: scrolled ? '0' : (hasAnnouncement ? '36px' : '0') }}>
                 <nav className="af-navbar">
                     <div className="af-nav-left">
                         <button className="af-menu-btn" onClick={toggleMobileMenu}>
@@ -120,32 +168,35 @@ export const Header = () => {
                     </div>
 
                     <div className="af-nav-right">
-                        <div style={{ marginRight: '16px', borderRight: '1px solid #eee', paddingRight: '16px', display: 'flex', alignItems: 'center' }}>
-                            <button
-                                onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
-                                style={{
-                                    background: '#f5f5f7',
-                                    border: 'none',
-                                    padding: '6px 12px',
-                                    borderRadius: '50px',
-                                    fontSize: '0.8rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px'
-                                }}
-                            >
-                                {currency} <ChevronDown size={14} />
-                            </button>
-                        </div>
-                        <button className="af-action-link" onClick={() => setSearchOpen(true)} aria-label="Search">
+                        {/* Hide currency switcher on mobile or if user is detected in India */}
+                        {countryCode !== 'IN' && !isMobile && (
+                            <div style={{ marginRight: '16px', borderRight: '1px solid #eee', paddingRight: '16px', display: 'flex', alignItems: 'center' }}>
+                                <button
+                                    onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
+                                    style={{
+                                        background: '#f5f5f7',
+                                        border: 'none',
+                                        padding: '6px 12px',
+                                        borderRadius: '50px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    {currency} <ChevronDown size={14} />
+                                </button>
+                            </div>
+                        )}
+                        <button className="af-action-link af-action-search" onClick={() => setSearchOpen(true)} aria-label="Search">
                             <Search size={20} strokeWidth={1.8} />
                         </button>
-                        <Link href="/account" className="af-action-link" aria-label="Account">
+                        <Link href="/account" className="af-action-link af-action-account" aria-label="Account">
                             <User size={20} strokeWidth={1.8} />
                         </Link>
-                        <button className="af-action-link" onClick={toggleCart} aria-label="Cart">
+                        <button className="af-action-link af-action-cart" onClick={toggleCart} aria-label="Cart">
                             <ShoppingBag size={20} strokeWidth={1.8} />
                             {cartCount > 0 && <span className="af-cart-count">{cartCount}</span>}
                         </button>
@@ -155,6 +206,12 @@ export const Header = () => {
 
             {/* Mobile Drawer */}
             <div className={`af-mobile-drawer ${mobileMenuOpen ? 'active' : ''}`}>
+                <div className="af-drawer-header">
+                    <span className="af-drawer-logo">DRIPZY</span>
+                    <button className="af-drawer-close" onClick={toggleMobileMenu} aria-label="Close menu">
+                        <X size={24} />
+                    </button>
+                </div>
                 <div className="af-mobile-nav">
                     <div className="af-mobile-acc-item active">
                         <button className="af-mobile-acc-trigger" onClick={() => { }}>Shop Electronics <span>+</span></button>
@@ -175,8 +232,10 @@ export const Header = () => {
 
             {/* Search Overlay */}
             <div className={`af-search-overlay ${searchOpen ? 'active' : ''}`}>
+                <button className="af-search-close-fixed" onClick={() => setSearchOpen(false)} aria-label="Close search">
+                    <X size={28} />
+                </button>
                 <div className="af-search-container">
-                    <button className="af-search-close-top" onClick={() => setSearchOpen(false)}>Close <X size={14} /></button>
                     <div className="af-search-input-wrap">
                         <input
                             type="text"

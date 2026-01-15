@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Download, Eye, ChevronLeft, ChevronRight, Package, Truck, CheckCircle, XCircle, Clock, Loader2, X } from 'lucide-react';
+import { Search, Download, Eye, ChevronLeft, ChevronRight, Package, Truck, CheckCircle, XCircle, Clock, Loader2, X, Edit, CreditCard } from 'lucide-react';
 
 interface Order {
     id: string;
@@ -17,6 +17,7 @@ interface Order {
         state: string;
         pincode: string;
         country: string;
+        countryCode?: string;
     };
     items: {
         productId: string;
@@ -68,7 +69,9 @@ export default function OrdersPage() {
     const [statusFilter, setStatusFilter] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+    const [editingOrder, setEditingOrder] = useState<Order | null>(null);
     const [fulfilling, setFulfilling] = useState<string | null>(null);
+    const [fulfillConfirmOrder, setFulfillConfirmOrder] = useState<Order | null>(null);
     const [updating, setUpdating] = useState<string | null>(null);
 
     useEffect(() => {
@@ -90,9 +93,8 @@ export default function OrdersPage() {
     };
 
     const handleFulfill = async (orderId: string) => {
-        if (!confirm('Send this order to CJ Dropshipping for fulfillment? This will use your CJ wallet balance.')) {
-            return;
-        }
+        console.log('[FULFILL] Starting fulfillment for order:', orderId);
+        setFulfillConfirmOrder(null); // Close modal
 
         setFulfilling(orderId);
         try {
@@ -103,11 +105,12 @@ export default function OrdersPage() {
                 alert(`Order sent to CJ! CJ Order ID: ${data.data.cjOrderId}`);
                 fetchOrders();
             } else {
-                alert(`Failed: ${data.error}`);
+                const detailStr = data.details ? `\n\nDetails: ${JSON.stringify(data.details, null, 2)}` : '';
+                alert(`Failed: ${data.error}${detailStr}`);
             }
         } catch (error) {
             console.error('Error fulfilling order:', error);
-            alert('Failed to fulfill order');
+            alert('An unexpected error occurred during fulfillment. Check console.');
         } finally {
             setFulfilling(null);
         }
@@ -278,6 +281,8 @@ export default function OrdersPage() {
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Customer</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Date</th>
                                 <th style={{ padding: '16px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Items</th>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Region</th>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Payment</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Status</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Fulfillment</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Total</th>
@@ -285,7 +290,7 @@ export default function OrdersPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredOrders.map((order) => (
+                            {filteredOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((order) => (
                                 <tr key={order.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
                                     <td style={{ padding: '16px 24px' }}>
                                         <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>#{order.orderNumber}</span>
@@ -296,6 +301,52 @@ export default function OrdersPage() {
                                     </td>
                                     <td style={{ padding: '16px', fontSize: '0.85rem', color: '#666' }}>{formatDate(order.createdAt)}</td>
                                     <td style={{ padding: '16px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 500 }}>{order.items?.length || 0}</td>
+                                    <td style={{ padding: '16px' }}>
+                                        <span style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600,
+                                            backgroundColor: '#f3f4f6',
+                                            color: '#374151'
+                                        }}>
+                                            {order.shippingAddress?.countryCode || order.shippingAddress?.country === 'India' ? 'IN' : 'US'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '16px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                            <span style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                padding: '6px 12px',
+                                                borderRadius: '50px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                backgroundColor: '#f0f9ff',
+                                                color: '#0369a1',
+                                                textTransform: 'uppercase'
+                                            }}>
+                                                <CreditCard size={12} />
+                                                {order.paymentMethod || 'N/A'}
+                                            </span>
+                                            {order.paymentMethod === 'cod' && (
+                                                <span style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    fontSize: '0.7rem',
+                                                    color: '#16a34a',
+                                                    fontWeight: 600
+                                                }}>
+                                                    <CheckCircle size={10} /> Verified
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td style={{ padding: '16px' }}>
                                         <span style={{
                                             padding: '6px 14px',
@@ -334,9 +385,16 @@ export default function OrdersPage() {
                                             >
                                                 <Eye size={16} style={{ color: '#666' }} />
                                             </button>
+                                            <button
+                                                onClick={() => setEditingOrder(order)}
+                                                style={{ padding: '8px', border: '1px solid #e5e5e5', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer' }}
+                                                title="Edit Order"
+                                            >
+                                                <Edit size={16} style={{ color: '#666' }} />
+                                            </button>
                                             {order.fulfillmentStatus === 'unfulfilled' && (
                                                 <button
-                                                    onClick={() => handleFulfill(order.id)}
+                                                    onClick={() => setFulfillConfirmOrder(order)}
                                                     disabled={fulfilling === order.id}
                                                     style={{
                                                         padding: '8px 12px',
@@ -515,7 +573,7 @@ export default function OrdersPage() {
                             {selectedOrder.fulfillmentStatus === 'unfulfilled' && (
                                 <button
                                     onClick={() => {
-                                        handleFulfill(selectedOrder.id);
+                                        setFulfillConfirmOrder(selectedOrder);
                                         setSelectedOrder(null);
                                     }}
                                     style={{
@@ -557,6 +615,435 @@ export default function OrdersPage() {
                                 <option value="delivered">Delivered</option>
                                 <option value="cancelled">Cancelled</option>
                             </select>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Order Modal */}
+            {editingOrder && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000,
+                    padding: '20px'
+                }} onClick={() => setEditingOrder(null)}>
+                    <div
+                        style={{
+                            backgroundColor: '#fff',
+                            borderRadius: '20px',
+                            width: '100%',
+                            maxWidth: '700px',
+                            maxHeight: '90vh',
+                            overflow: 'auto',
+                            padding: '32px'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 600 }}>Edit Order #{editingOrder.orderNumber}</h2>
+                                <p style={{ margin: '4px 0 0', color: '#888', fontSize: '0.85rem' }}>Update order details</p>
+                            </div>
+                            <button onClick={() => setEditingOrder(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}>
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        {/* Customer Info */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <h4 style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Customer Information</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Name</label>
+                                    <input
+                                        type="text"
+                                        value={editingOrder.customer?.name || ''}
+                                        onChange={(e) => setEditingOrder({
+                                            ...editingOrder,
+                                            customer: { ...editingOrder.customer, name: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Email</label>
+                                    <input
+                                        type="email"
+                                        value={editingOrder.customer?.email || ''}
+                                        onChange={(e) => setEditingOrder({
+                                            ...editingOrder,
+                                            customer: { ...editingOrder.customer, email: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Phone</label>
+                                    <input
+                                        type="tel"
+                                        value={editingOrder.customer?.phone || ''}
+                                        onChange={(e) => setEditingOrder({
+                                            ...editingOrder,
+                                            customer: { ...editingOrder.customer, phone: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Shipping Address */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <h4 style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Shipping Address</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Address</label>
+                                    <input
+                                        type="text"
+                                        value={editingOrder.shippingAddress?.address || ''}
+                                        onChange={(e) => setEditingOrder({
+                                            ...editingOrder,
+                                            shippingAddress: { ...editingOrder.shippingAddress, address: e.target.value }
+                                        })}
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>City</label>
+                                        <input
+                                            type="text"
+                                            value={editingOrder.shippingAddress?.city || ''}
+                                            onChange={(e) => setEditingOrder({
+                                                ...editingOrder,
+                                                shippingAddress: { ...editingOrder.shippingAddress, city: e.target.value }
+                                            })}
+                                            style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>State</label>
+                                        <input
+                                            type="text"
+                                            value={editingOrder.shippingAddress?.state || ''}
+                                            onChange={(e) => setEditingOrder({
+                                                ...editingOrder,
+                                                shippingAddress: { ...editingOrder.shippingAddress, state: e.target.value }
+                                            })}
+                                            style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>PIN Code</label>
+                                        <input
+                                            type="text"
+                                            value={editingOrder.shippingAddress?.pincode || ''}
+                                            onChange={(e) => setEditingOrder({
+                                                ...editingOrder,
+                                                shippingAddress: { ...editingOrder.shippingAddress, pincode: e.target.value }
+                                            })}
+                                            style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Country</label>
+                                    <select
+                                        value={editingOrder.shippingAddress?.country || ''}
+                                        onChange={(e) => setEditingOrder({
+                                            ...editingOrder,
+                                            shippingAddress: { ...editingOrder.shippingAddress, country: e.target.value }
+                                        })}
+                                        title="Select Country"
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    >
+                                        <option value="">Select Country</option>
+                                        <option value="IN">India</option>
+                                        <option value="US">United States</option>
+                                        <option value="GB">United Kingdom</option>
+                                        <option value="CA">Canada</option>
+                                        <option value="AU">Australia</option>
+                                        <option value="DE">Germany</option>
+                                        <option value="FR">France</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Order Items */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <h4 style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Order Items</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {editingOrder.items?.map((item, idx) => (
+                                    <div key={idx} style={{ display: 'flex', gap: '16px', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '10px', alignItems: 'center' }}>
+                                        {item.image && (
+                                            <img src={item.image} alt={item.name} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
+                                        )}
+                                        <div style={{ flex: 1 }}>
+                                            <p style={{ margin: 0, fontWeight: 500, fontSize: '0.9rem' }}>{item.name}</p>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label style={{ fontSize: '0.8rem', color: '#666' }}>Qty:</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={item.quantity}
+                                                onChange={(e) => {
+                                                    const newItems = [...editingOrder.items];
+                                                    newItems[idx] = { ...newItems[idx], quantity: parseInt(e.target.value) || 1 };
+                                                    setEditingOrder({ ...editingOrder, items: newItems });
+                                                }}
+                                                style={{ width: '60px', padding: '6px 10px', border: '1px solid #e5e5e5', borderRadius: '6px', fontSize: '0.9rem', textAlign: 'center' }}
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label style={{ fontSize: '0.8rem', color: '#666' }}>Price:</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={item.price}
+                                                onChange={(e) => {
+                                                    const newItems = [...editingOrder.items];
+                                                    newItems[idx] = { ...newItems[idx], price: parseFloat(e.target.value) || 0 };
+                                                    setEditingOrder({ ...editingOrder, items: newItems });
+                                                }}
+                                                style={{ width: '80px', padding: '6px 10px', border: '1px solid #e5e5e5', borderRadius: '6px', fontSize: '0.9rem', textAlign: 'right' }}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Order Status */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <h4 style={{ margin: '0 0 16px', fontSize: '0.85rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Order Status</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Status</label>
+                                    <select
+                                        value={editingOrder.status}
+                                        onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value as any })}
+                                        title="Select Status"
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    >
+                                        <option value="pending">Pending</option>
+                                        <option value="processing">Processing</option>
+                                        <option value="shipped">Shipped</option>
+                                        <option value="delivered">Delivered</option>
+                                        <option value="cancelled">Cancelled</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.8rem', color: '#666', marginBottom: '6px' }}>Fulfillment Status</label>
+                                    <select
+                                        value={editingOrder.fulfillmentStatus}
+                                        onChange={(e) => setEditingOrder({ ...editingOrder, fulfillmentStatus: e.target.value as any })}
+                                        title="Select Fulfillment Status"
+                                        style={{ width: '100%', padding: '10px 14px', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '0.9rem' }}
+                                    >
+                                        <option value="unfulfilled">Unfulfilled</option>
+                                        <option value="pending">Pending</option>
+                                        <option value="fulfilled">Fulfilled</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => setEditingOrder(null)}
+                                style={{
+                                    padding: '12px 24px',
+                                    backgroundColor: '#fff',
+                                    color: '#000',
+                                    border: '1px solid #e5e5e5',
+                                    borderRadius: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setUpdating(editingOrder.id);
+                                    try {
+                                        // Calculate new totals
+                                        const newSubtotal = editingOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                                        const orderToSave = {
+                                            ...editingOrder,
+                                            subtotal: newSubtotal,
+                                            total: newSubtotal + (editingOrder.shipping || 0)
+                                        };
+
+                                        const res = await fetch(`/api/orders/${editingOrder.id}`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(orderToSave),
+                                        });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            alert('Order updated successfully!');
+                                            setEditingOrder(null);
+                                            fetchOrders();
+                                        } else {
+                                            alert(`Failed: ${data.error}`);
+                                        }
+                                    } catch (error) {
+                                        console.error('Error updating order:', error);
+                                        alert('Failed to update order');
+                                    } finally {
+                                        setUpdating(null);
+                                    }
+                                }}
+                                disabled={updating === editingOrder.id}
+                                style={{
+                                    padding: '12px 32px',
+                                    backgroundColor: updating === editingOrder.id ? '#888' : '#000',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    fontWeight: 600,
+                                    cursor: updating === editingOrder.id ? 'not-allowed' : 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                {updating === editingOrder.id ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    'Save Changes'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Fulfillment Confirmation Modal */}
+            {fulfillConfirmOrder && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: '#fff',
+                        borderRadius: '16px',
+                        padding: '32px',
+                        maxWidth: '450px',
+                        width: '90%',
+                        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                            <div style={{
+                                padding: '12px',
+                                backgroundColor: '#fef3c7',
+                                borderRadius: '12px'
+                            }}>
+                                <Truck size={24} style={{ color: '#d97706' }} />
+                            </div>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
+                                Confirm Fulfillment
+                            </h3>
+                        </div>
+
+                        <div style={{
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '12px',
+                            padding: '16px',
+                            marginBottom: '20px'
+                        }}>
+                            <div style={{ fontSize: '0.9rem', color: '#666', marginBottom: '8px' }}>
+                                Order Details
+                            </div>
+                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+                                #{fulfillConfirmOrder.orderNumber}
+                            </div>
+                            <div style={{ fontSize: '0.9rem', color: '#666' }}>
+                                {fulfillConfirmOrder.customer.name} • {formatPrice(fulfillConfirmOrder.total, fulfillConfirmOrder.currency)}
+                            </div>
+                        </div>
+
+                        <div style={{
+                            backgroundColor: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            borderRadius: '10px',
+                            padding: '14px',
+                            marginBottom: '24px',
+                            fontSize: '0.85rem',
+                            color: '#991b1b'
+                        }}>
+                            ⚠️ This will send the order to CJ Dropshipping and <strong>charge your CJ wallet balance</strong>.
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={() => setFulfillConfirmOrder(null)}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    backgroundColor: '#f1f5f9',
+                                    color: '#475569',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleFulfill(fulfillConfirmOrder.id)}
+                                disabled={fulfilling === fulfillConfirmOrder.id}
+                                style={{
+                                    flex: 1,
+                                    padding: '14px',
+                                    backgroundColor: '#000',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    fontWeight: 600,
+                                    cursor: fulfilling === fulfillConfirmOrder.id ? 'not-allowed' : 'pointer',
+                                    fontSize: '0.9rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                {fulfilling === fulfillConfirmOrder.id ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Truck size={16} />
+                                        Confirm & Fulfill
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>

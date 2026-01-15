@@ -20,7 +20,7 @@ const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined
 export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
     const [currency, setCurrencyState] = useState<Currency>('USD');
     const [countryCode, setCountryCode] = useState<string | null>(null);
-    const exchangeRate = 83; // Fixed rate for now
+    const exchangeRate = 87; // Updated to more current rate
 
     // Load preference or detect location
     useEffect(() => {

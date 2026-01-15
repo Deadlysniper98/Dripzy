@@ -40,22 +40,6 @@ export default function Home() {
 
   return (
     <div>
-      {themeConfig?.announcement?.enabled && (
-        <div style={{
-          backgroundColor: themeConfig.announcement.backgroundColor || '#000',
-          color: '#fff',
-          padding: '10px',
-          textAlign: 'center',
-          fontSize: '0.8rem',
-          fontWeight: 700,
-          letterSpacing: '0.1em',
-          position: 'sticky',
-          top: 0,
-          zIndex: 2000
-        }}>
-          {themeConfig.announcement.text}
-        </div>
-      )}
       <HeroSlider config={themeConfig?.hero} />
       <CategoryGrid categories={themeConfig?.categories} />
       <BestSellers featuredIds={themeConfig?.featuredProducts} />

@@ -15,13 +15,15 @@ import {
     Upload,
     GripVertical,
     Trash2,
-    Link as LinkIcon
+    Link as LinkIcon,
+    Search
 } from 'lucide-react';
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface HeroSlide {
+    id: string;
     image: string;
     mobileImage?: string;
     link: string;
@@ -33,6 +35,7 @@ interface ThemeConfig {
         slides: HeroSlide[];
     };
     categories: {
+        id: string;
         name: string;
         image: string;
         link: string;
@@ -49,6 +52,7 @@ const DEFAULT_CONFIG: ThemeConfig = {
     hero: {
         slides: [
             {
+                id: 'default-slide-1',
                 image: 'https://cdn.shopify.com/s/files/1/0226/7407/9819/files/Desktop_Poster.png?v=1763107337',
                 mobileImage: 'https://cdn.shopify.com/s/files/1/0226/7407/9819/files/Mobile_Poster.png?v=1763108538',
                 link: '/products',
@@ -57,9 +61,9 @@ const DEFAULT_CONFIG: ThemeConfig = {
         ]
     },
     categories: [
-        { name: 'Classic Cases', image: 'https://images.unsplash.com/photo-1603313011101-31c726a55018', link: '/products?category=Cases' },
-        { name: 'Power Gear', image: 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0', link: '/products?category=Chargers' },
-        { name: 'Smart Audio', image: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b', link: '/products?category=Audio' }
+        { id: 'cat-1', name: 'Tech Accessories', image: '/tech_accessories.png', link: '/products?category=Accessories' },
+        { id: 'cat-2', name: 'Bags & Wallets', image: '/bags_wallets.png', link: '/products?category=Bags' },
+        { id: 'cat-3', name: 'Work Essentials', image: '/work_essentials.png', link: '/products?category=Work' }
     ],
     featuredProducts: [],
     announcement: {
@@ -76,6 +80,10 @@ export default function ThemePage() {
     const [saving, setSaving] = useState(false);
     const [activeSection, setActiveSection] = useState<'hero' | 'categories' | 'products' | 'general'>('hero');
     const [draggedSlideIdx, setDraggedSlideIdx] = useState<number | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [uploadingIds, setUploadingIds] = useState<string[]>([]);
+
+    const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     useEffect(() => {
         fetchData();
@@ -88,16 +96,28 @@ export default function ThemePage() {
             const themeDoc = await getDoc(doc(db, 'settings', 'theme'));
             if (themeDoc.exists()) {
                 const data = themeDoc.data();
-                // Ensure hero slides match new structure
+                // Ensure hero slides and categories have IDs
                 const loadedConfig = { ...DEFAULT_CONFIG, ...data };
+
                 if (data.hero?.slides) {
                     loadedConfig.hero.slides = data.hero.slides.map((s: any) => ({
+                        id: s.id || generateId(),
                         image: s.image || '',
                         mobileImage: s.mobileImage || '',
                         link: s.link || s.buttonLink || '',
                         alt: s.alt || s.title || ''
                     }));
                 }
+
+                if (data.categories) {
+                    loadedConfig.categories = data.categories.map((c: any) => ({
+                        id: c.id || generateId(),
+                        name: c.name || '',
+                        image: c.image || '',
+                        link: c.link || ''
+                    }));
+                }
+
                 setConfig(loadedConfig);
             }
 
@@ -125,17 +145,57 @@ export default function ThemePage() {
         }
     };
 
-    const handleFileUpload = async (index: number, type: 'image' | 'mobileImage', file: File) => {
-        const sRef = ref(storage, `banners/slide_${index}_${type}_${Date.now()}`);
+    const handleFileUpload = async (slideId: string, type: 'image' | 'mobileImage', file: File) => {
+        const uploadKey = `${slideId}-${type}`;
+        setUploadingIds(prev => [...prev, uploadKey]);
+        const sRef = ref(storage, `banners/slide_${Date.now()}_${file.name}`);
+
+        // 30 second timeout
+        const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Upload timed out after 30 seconds. This might be due to Firebase Storage not being enabled or a CORS issue.')), 30000)
+        );
+
         try {
-            await uploadBytes(sRef, file);
+            await Promise.race([uploadBytes(sRef, file), timeout]);
             const url = await getDownloadURL(sRef);
-            const newSlides = [...config.hero.slides];
-            newSlides[index] = { ...newSlides[index], [type]: url };
-            setConfig({ ...config, hero: { slides: newSlides } });
-        } catch (error) {
+
+            setConfig(prev => {
+                const newSlides = prev.hero.slides.map(s =>
+                    s.id === slideId ? { ...s, [type]: url } : s
+                );
+                return { ...prev, hero: { ...prev.hero, slides: newSlides } };
+            });
+        } catch (error: any) {
             console.error('Upload error:', error);
-            alert('Failed to upload image.');
+            alert(`Upload failed: ${error.message || 'Unknown error'}. \n\nTip: If it remains stuck, please use the "Image URL" box to manually paste a link.`);
+        } finally {
+            setUploadingIds(prev => prev.filter(id => id !== uploadKey));
+        }
+    };
+
+    const handleCategoryUpload = async (catId: string, file: File) => {
+        setUploadingIds(prev => [...prev, catId]);
+        const sRef = ref(storage, `categories/cat_${Date.now()}_${file.name}`);
+
+        const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Upload timed out. Check your Firebase Storage settings.')), 30000)
+        );
+
+        try {
+            await Promise.race([uploadBytes(sRef, file), timeout]);
+            const url = await getDownloadURL(sRef);
+
+            setConfig(prev => {
+                const newCats = prev.categories.map(c =>
+                    c.id === catId ? { ...c, image: url } : c
+                );
+                return { ...prev, categories: newCats };
+            });
+        } catch (error: any) {
+            console.error('Upload error:', error);
+            alert(`Category upload failed: ${error.message}. \n\nYou can still paste the image URL manually in the text box.`);
+        } finally {
+            setUploadingIds(prev => prev.filter(id => id !== catId));
         }
     };
 
@@ -231,7 +291,7 @@ export default function ThemePage() {
                                     <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '4px' }}>Drag and drop to reorder. Upload separate images for Mobile.</p>
                                 </div>
                                 <button
-                                    onClick={() => setConfig({ ...config, hero: { slides: [...config.hero.slides, { image: '', mobileImage: '', link: '', alt: '' }] } })}
+                                    onClick={() => setConfig({ ...config, hero: { slides: [...config.hero.slides, { id: generateId(), image: '', mobileImage: '', link: '', alt: '' }] } })}
                                     style={{ padding: '8px 16px', backgroundColor: '#f5f5f7', border: 'none', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <Plus size={16} /> Add Slide
                                 </button>
@@ -240,7 +300,7 @@ export default function ThemePage() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                                 {config.hero.slides.map((slide, idx) => (
                                     <div
-                                        key={idx}
+                                        key={slide.id}
                                         draggable
                                         onDragStart={() => onSlideDragStart(idx)}
                                         onDragOver={(e) => onSlideDragOver(e, idx)}
@@ -274,20 +334,24 @@ export default function ThemePage() {
                                                         border: '1px solid #eee',
                                                         position: 'relative',
                                                         cursor: 'pointer'
-                                                    }} onClick={() => document.getElementById(`hero-file-desktop-${idx}`)?.click()}>
-                                                        {slide.image ? (
-                                                            <img src={slide.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    }} onClick={() => document.getElementById(`hero-file-desktop-${slide.id}`)?.click()}>
+                                                        {uploadingIds.includes(`${slide.id}-image`) ? (
+                                                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <Loader2 size={24} className="animate-spin" />
+                                                            </div>
+                                                        ) : slide.image ? (
+                                                            <img src={slide.image} alt={`Slide ${idx + 1} Desktop`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                         ) : (
                                                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa' }}>
                                                                 <Upload size={24} />
                                                             </div>
                                                         )}
                                                         <input
-                                                            id={`hero-file-desktop-${idx}`}
+                                                            id={`hero-file-desktop-${slide.id}`}
                                                             type="file"
                                                             hidden
                                                             accept="image/*"
-                                                            onChange={(e) => e.target.files?.[0] && handleFileUpload(idx, 'image', e.target.files[0])}
+                                                            onChange={(e) => e.target.files?.[0] && handleFileUpload(slide.id, 'image', e.target.files[0])}
                                                         />
                                                     </div>
                                                 </div>
@@ -302,20 +366,24 @@ export default function ThemePage() {
                                                         border: '1px solid #eee',
                                                         position: 'relative',
                                                         cursor: 'pointer'
-                                                    }} onClick={() => document.getElementById(`hero-file-mobile-${idx}`)?.click()}>
-                                                        {slide.mobileImage ? (
-                                                            <img src={slide.mobileImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    }} onClick={() => document.getElementById(`hero-file-mobile-${slide.id}`)?.click()}>
+                                                        {uploadingIds.includes(`${slide.id}-mobileImage`) ? (
+                                                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <Loader2 size={16} className="animate-spin" />
+                                                            </div>
+                                                        ) : slide.mobileImage ? (
+                                                            <img src={slide.mobileImage} alt={`Slide ${idx + 1} Mobile`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                         ) : (
                                                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa' }}>
                                                                 <Upload size={20} />
                                                             </div>
                                                         )}
                                                         <input
-                                                            id={`hero-file-mobile-${idx}`}
+                                                            id={`hero-file-mobile-${slide.id}`}
                                                             type="file"
                                                             hidden
                                                             accept="image/*"
-                                                            onChange={(e) => e.target.files?.[0] && handleFileUpload(idx, 'mobileImage', e.target.files[0])}
+                                                            onChange={(e) => e.target.files?.[0] && handleFileUpload(slide.id, 'mobileImage', e.target.files[0])}
                                                         />
                                                     </div>
                                                 </div>
@@ -323,6 +391,23 @@ export default function ThemePage() {
 
                                             {/* Details */}
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                <div>
+                                                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#444', marginBottom: '8px' }}>Banner Image URL (Optional)</label>
+                                                    <div style={{ position: 'relative' }}>
+                                                        <ImageIcon size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }} />
+                                                        <input
+                                                            type="text"
+                                                            value={slide.image}
+                                                            placeholder="Paste an image link or upload above"
+                                                            onChange={(e) => {
+                                                                const newSlides = [...config.hero.slides];
+                                                                newSlides[idx].image = e.target.value;
+                                                                setConfig({ ...config, hero: { slides: newSlides } });
+                                                            }}
+                                                            style={{ width: '100%', padding: '12px 12px 12px 40px', border: '1px solid #ddd', borderRadius: '10px', fontSize: '0.9rem' }}
+                                                        />
+                                                    </div>
+                                                </div>
                                                 <div>
                                                     <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#444', marginBottom: '8px' }}>Action Link</label>
                                                     <div style={{ position: 'relative' }}>
@@ -380,15 +465,32 @@ export default function ThemePage() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Categories Grid</h2>
                                 <button
-                                    onClick={() => setConfig({ ...config, categories: [...config.categories, { name: 'New Category', image: '', link: '#' }] })}
+                                    onClick={() => setConfig({ ...config, categories: [...config.categories, { id: generateId(), name: 'New Category', image: '', link: '#' }] })}
                                     style={{ padding: '8px 16px', backgroundColor: '#f5f5f7', border: 'none', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>+ Add Row</button>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 {config.categories.map((cat, idx) => (
-                                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 1.5fr 2fr 1fr 40px', gap: '16px', alignItems: 'center', padding: '16px', border: '1px solid #eee', borderRadius: '16px' }}>
-                                        <div style={{ width: '60px', height: '60px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#f5f5f7', border: '1px solid #eee' }}>
-                                            <img src={cat.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <div key={cat.id} style={{ display: 'grid', gridTemplateColumns: '60px 1.5fr 2fr 1fr 40px', gap: '16px', alignItems: 'center', padding: '16px', border: '1px solid #eee', borderRadius: '16px' }}>
+                                        <div
+                                            onClick={() => document.getElementById(`cat-curr-file-${cat.id}`)?.click()}
+                                            style={{ width: '60px', height: '60px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#f5f5f7', border: '1px solid #eee', cursor: 'pointer', position: 'relative' }}>
+                                            {uploadingIds.includes(cat.id) ? (
+                                                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Loader2 size={16} className="animate-spin" />
+                                                </div>
+                                            ) : cat.image ? (
+                                                <img src={cat.image} alt={cat.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}><Upload size={20} /></div>
+                                            )}
                                         </div>
+                                        <input
+                                            id={`cat-curr-file-${cat.id}`}
+                                            type="file"
+                                            hidden
+                                            accept="image/*"
+                                            onChange={(e) => e.target.files?.[0] && handleCategoryUpload(cat.id, e.target.files[0])}
+                                        />
                                         <input
                                             type="text"
                                             value={cat.name}
@@ -441,28 +543,84 @@ export default function ThemePage() {
                                 <p style={{ color: '#666', fontSize: '0.9rem', marginTop: '4px' }}>Select products to display in the "Best Sellers" row.</p>
                             </div>
 
+                            <div style={{ marginBottom: '16px', position: 'relative' }}>
+                                <Search size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Search products..."
+                                    style={{ width: '100%', padding: '12px 12px 12px 40px', border: '1px solid #eee', borderRadius: '12px', fontSize: '0.95rem' }}
+                                />
+                            </div>
+
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '16px' }}>
-                                {products.map((p) => {
-                                    const isSelected = config.featuredProducts.includes(p.id);
-                                    return (
-                                        <div
-                                            key={p.id}
-                                            onClick={() => {
-                                                const newFeatured = isSelected
-                                                    ? config.featuredProducts.filter(id => id !== p.id)
-                                                    : [...config.featuredProducts, p.id];
-                                                setConfig({ ...config, featuredProducts: newFeatured });
-                                            }}
-                                            style={{ padding: '12px', border: isSelected ? '2px solid #000' : '1px solid #eee', borderRadius: '16px', cursor: 'pointer', position: 'relative', backgroundColor: isSelected ? 'rgba(0,0,0,0.02)' : 'transparent', transition: 'all 0.2s' }}
-                                        >
-                                            <div style={{ aspectRatio: '1', borderRadius: '10px', overflow: 'hidden', marginBottom: '8px' }}>
-                                                <img src={p.featuredImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                {products
+                                    .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                                    .map((p) => {
+                                        const isSelected = config.featuredProducts.includes(p.id);
+                                        return (
+                                            <div
+                                                key={p.id}
+                                                onClick={() => {
+                                                    const newFeatured = isSelected
+                                                        ? config.featuredProducts.filter(id => id !== p.id)
+                                                        : [...config.featuredProducts, p.id];
+                                                    setConfig({ ...config, featuredProducts: newFeatured });
+                                                }}
+                                                style={{
+                                                    padding: '12px',
+                                                    border: isSelected ? '3px solid #000' : '1px solid #eee',
+                                                    borderRadius: '16px',
+                                                    cursor: 'pointer',
+                                                    position: 'relative',
+                                                    backgroundColor: isSelected ? '#f8f9fa' : 'transparent',
+                                                    transition: 'all 0.2s',
+                                                    boxShadow: isSelected ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
+                                                }}
+                                            >
+                                                <div style={{ aspectRatio: '1', borderRadius: '10px', overflow: 'hidden', marginBottom: '8px' }}>
+                                                    <img src={p.featuredImage} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: isSelected ? '#000' : '#444' }}>{p.name}</div>
+                                                {isSelected && (
+                                                    <div style={{
+                                                        marginTop: '4px',
+                                                        padding: '2px 8px',
+                                                        backgroundColor: '#dcfce7',
+                                                        color: '#166534',
+                                                        fontSize: '0.65rem',
+                                                        fontWeight: 800,
+                                                        borderRadius: '4px',
+                                                        display: 'inline-block',
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        Featured
+                                                    </div>
+                                                )}
+                                                {isSelected && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '-10px',
+                                                        right: '-10px',
+                                                        width: '28px',
+                                                        height: '28px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: '#10b981',
+                                                        color: '#fff',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        border: '3px solid #fff',
+                                                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                                                        zIndex: 10
+                                                    }}>
+                                                        <Save size={16} />
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                                            {isSelected && <div style={{ position: 'absolute', top: '8px', right: '8px', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: '#000', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}><Plus size={12} style={{ transform: 'rotate(45deg)' }} /></div>}
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })}
                             </div>
                         </div>
                     )}
@@ -478,6 +636,8 @@ export default function ThemePage() {
                                     </div>
                                     <button
                                         onClick={() => setConfig({ ...config, announcement: { ...config.announcement, enabled: !config.announcement.enabled } })}
+                                        title={config.announcement.enabled ? "Disable announcement bar" : "Enable announcement bar"}
+                                        aria-label={config.announcement.enabled ? "Disable announcement bar" : "Enable announcement bar"}
                                         style={{ width: '56px', height: '30px', borderRadius: '50px', border: 'none', backgroundColor: config.announcement.enabled ? '#000' : '#ccc', padding: '4px', cursor: 'pointer', transition: '0.3s' }}>
                                         <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#fff', transform: config.announcement.enabled ? 'translateX(26px)' : 'translateX(0)', transition: '0.3s' }} />
                                     </button>

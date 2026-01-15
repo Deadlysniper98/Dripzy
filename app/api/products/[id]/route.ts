@@ -128,23 +128,28 @@ export async function DELETE(
         const { id } = await params;
 
         if (!id) {
+            console.log('DELETE Error: No ID provided');
             return NextResponse.json(
                 { success: false, error: 'Product ID is required' },
                 { status: 400 }
             );
         }
 
+        console.log(`[API] Attempting to delete product: ${id}`);
         const docRef = doc(db, 'products', id);
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
+            console.log(`[API] Product not found in Firestore: ${id}`);
             return NextResponse.json(
                 { success: false, error: 'Product not found' },
                 { status: 404 }
             );
         }
 
+        console.log(`[API] Deleting doc: ${id}`);
         await deleteDoc(docRef);
+        console.log(`[API] Successfully deleted doc: ${id}`);
 
         return NextResponse.json({
             success: true,

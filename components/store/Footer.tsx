@@ -6,29 +6,29 @@ export const Footer = () => {
             <div className="af-footer-card">
                 <div className="af-footer-grid">
                     <div className="af-brand-col">
-                        <h3>Arctic Fox</h3>
-                        <p>Redefining travel and technology carry for the digital era.</p>
+                        <h3>Dripzy.in</h3>
+                        <p>Premium tech accessories and electronics for the modern lifestyle.</p>
                     </div>
                     <div className="af-footer-col">
                         <h4>Support</h4>
                         <ul className="af-footer-links">
-                            <li><Link href="#">Warranty Policy</Link></li>
-                            <li><Link href="#">Shipping Policy</Link></li>
-                            <li><Link href="#">Track Your Order</Link></li>
+                            <li><Link href="/warranty">Warranty Policy</Link></li>
+                            <li><Link href="/shipping">Shipping Policy</Link></li>
+                            <li><Link href="/track-order">Track Your Order</Link></li>
                         </ul>
                     </div>
                     <div className="af-footer-col">
                         <h4>Legal</h4>
                         <ul className="af-footer-links">
-                            <li><Link href="#">Privacy Policy</Link></li>
-                            <li><Link href="#">Terms & Conditions</Link></li>
+                            <li><Link href="/privacy">Privacy Policy</Link></li>
+                            <li><Link href="/terms">Terms & Conditions</Link></li>
                         </ul>
                     </div>
                     <div className="af-footer-col">
                         <h4>Company</h4>
                         <ul className="af-footer-links">
-                            <li><Link href="#">About Us</Link></li>
-                            <li><Link href="#">Join Us</Link></li>
+                            <li><Link href="/about">About Us</Link></li>
+                            <li><Link href="/careers">Join Us</Link></li>
                         </ul>
                     </div>
                 </div>

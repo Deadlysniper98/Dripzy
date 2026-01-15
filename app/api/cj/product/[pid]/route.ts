@@ -40,7 +40,8 @@ export async function GET(
             console.log(`[SHIP-CHECK] Starting deep check for PID: ${pid} to ${countryCode}`);
             console.log(`[SHIP-CHECK] Origins discovered: ${originsToTry.join(', ')}`);
 
-            outerLoop:
+            let bestShipping: any[] | null = null;
+
             for (const [vIdx, variant] of variantsToTest.entries()) {
                 for (const startCountry of originsToTry) {
                     try {
@@ -52,11 +53,24 @@ export async function GET(
                         });
 
                         if (result && result.length > 0) {
-                            shipping = result;
-                            break outerLoop; // Found working shipping for at least one variant/origin pair!
+                            console.log(`[SHIP-CHECK] Found ${result.length} options for Variant[${vIdx}] from ${startCountry}`);
+                            // Logic: Prefer the result set with the MOST options (likely includes sensitive/liquid lines if applicable)
+                            if (!bestShipping || result.length > bestShipping.length) {
+                                bestShipping = result;
+                            }
+
+                            // Optimization: If we found a "good" number of options (e.g. > 5), we can probably stop early?
+                            // But for now, let's check at least the top few to be safe, max 3 variants isn't heavy.
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        console.error(`[SHIP-CHECK] Error checking variant ${variant.vid}:`, e);
+                    }
                 }
+            }
+
+            if (bestShipping) {
+                shipping = bestShipping;
+                console.log(`[SHIP-CHECK] Selected best shipping set with ${shipping.length} options.`);
             }
 
             // Ultimate Fallback: Try the very first variant with NO startCountry specified

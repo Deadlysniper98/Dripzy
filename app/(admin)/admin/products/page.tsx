@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronRight, Package, Image as ImageIcon, Download, ExternalLink, RefreshCw, X, Check, AlertCircle, Loader2, Upload, GripVertical, Sliders, Filter } from 'lucide-react';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { cleanCjUrl } from '@/lib/types/product';
 
 // Types
 interface StoreProduct {
@@ -32,11 +33,12 @@ interface StoreProduct {
     hasVariants: boolean; // Added
     videoUrl?: string; // Added
     glbUrl?: string; // Added
+    totalSales?: number; // Added tracking
 }
 
 // Helper to convert USD string to INR number
 const usdToInr = (usd: number | string) => {
-    const rate = 83; // Fixed exchange rate for Dripzy
+    const rate = 87; // Fixed exchange rate for Dripzy
     const value = typeof usd === 'string' ? parseFloat(usd) : usd;
     return Math.ceil(value * rate);
 };
@@ -95,6 +97,7 @@ export default function ProductsPage() {
     const [importingProducts, setImportingProducts] = useState<Set<string>>(new Set());
     const [importedProducts, setImportedProducts] = useState<Set<string>>(new Set());
     const [importError, setImportError] = useState<string | null>(null);
+    const [selectedImportImages, setSelectedImportImages] = useState<Set<string>>(new Set());
 
     // Edit/Delete state
     const [editingProduct, setEditingProduct] = useState<StoreProduct | null>(null);
@@ -108,6 +111,28 @@ export default function ProductsPage() {
     // Selection state for bulk actions
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+
+    // Shipping info for Edit Modal
+    const [editShippingInfo, setEditShippingInfo] = useState<any[] | null>(null);
+    const [loadingEditShipping, setLoadingEditShipping] = useState(false);
+
+    useEffect(() => {
+        if (editingProduct?.cjProductId) {
+            setLoadingEditShipping(true);
+            setEditShippingInfo(null);
+            fetch(`/api/cj/product/${editingProduct.cjProductId}?countryCode=IN`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.data.shippingInfo) {
+                        setEditShippingInfo(data.data.shippingInfo);
+                    }
+                })
+                .catch(err => console.error('Error fetching edit shipping:', err))
+                .finally(() => setLoadingEditShipping(false));
+        } else {
+            setEditShippingInfo(null);
+        }
+    }, [editingProduct?.cjProductId]);
 
     // Toggle individual selection
     const toggleSelect = (id: string) => {
@@ -137,15 +162,44 @@ export default function ProductsPage() {
         setIsBulkProcessing(true);
         try {
             const idsToDelete = Array.from(selectedIds);
-            // Process in parallel with a small limit or just sequential for safety
+            const successIds = new Set<string>();
+            const errors: string[] = [];
+
+            // Process sequentially to avoid overwhelming the server
             for (const id of idsToDelete) {
-                await fetch(`/api/products/${id}`, { method: 'DELETE' });
+                try {
+                    console.log(`[Bulk] Attempting delete for ${id}`);
+                    const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        console.log(`[Bulk] Success: ${id}`);
+                        successIds.add(id);
+                    } else {
+                        console.error(`[Bulk] Failed ${id}:`, data.error);
+                        errors.push(`Failed to delete ${id}: ${data.error}`);
+                    }
+                } catch (err) {
+                    console.error(`[Bulk] Network error ${id}:`, err);
+                    errors.push(`Network error for ${id}`);
+                }
             }
-            setStoreProducts(prev => prev.filter(p => !selectedIds.has(p.id)));
-            setSelectedIds(new Set());
+
+            if (successIds.size > 0) {
+                setStoreProducts(prev => prev.filter(p => !successIds.has(p.id)));
+
+                // Update selection to only keep failed items
+                const newSelected = new Set(selectedIds);
+                successIds.forEach(id => newSelected.delete(id));
+                setSelectedIds(newSelected);
+            }
+
+            if (errors.length > 0) {
+                alert(`Some deletions failed:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? '...' : ''}`);
+            }
         } catch (error) {
-            console.error('Bulk delete error:', error);
-            alert('Failed to delete some products.');
+            console.error('Bulk delete catastrophic error:', error);
+            alert('Failed to execute bulk delete.');
         } finally {
             setIsBulkProcessing(false);
         }
@@ -203,28 +257,99 @@ export default function ProductsPage() {
         }
     }, [storeSearchQuery, storeStatusFilter]);
 
-    // Delete product
-    const handleDeleteProduct = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this product? This action cannot be undone.')) return;
+    // Delete Modal State
+    const [deleteModal, setDeleteModal] = useState<{
+        isOpen: boolean;
+        type: 'single' | 'bulk';
+        ids: string[];
+        productName?: string; // For single delete confirmation
+    }>({ isOpen: false, type: 'single', ids: [] });
 
-        setIsDeleting(id);
-        try {
-            const res = await fetch(`/api/products/${id}`, {
-                method: 'DELETE',
-            });
-            const data = await res.json();
+    // Delete Progress State
+    const [deleteProgress, setDeleteProgress] = useState<{
+        isProcessing: boolean;
+        current: number;
+        total: number;
+        success: number;
+        failed: number;
+        errors: string[];
+        completed: boolean;
+    }>({ isProcessing: false, current: 0, total: 0, success: 0, failed: 0, errors: [], completed: false });
 
-            if (data.success) {
-                setStoreProducts(prev => prev.filter(p => p.id !== id));
-            } else {
-                alert(data.error || 'Failed to delete product');
+    // Open Delete Modal
+    const handleDeleteClick = (id: string, name: string) => {
+        setDeleteModal({
+            isOpen: true,
+            type: 'single',
+            ids: [id],
+            productName: name
+        });
+        setDeleteProgress({ isProcessing: false, current: 0, total: 1, success: 0, failed: 0, errors: [], completed: false });
+    };
+
+    const handleBulkDeleteClick = () => {
+        if (selectedIds.size === 0) return;
+        setDeleteModal({
+            isOpen: true,
+            type: 'bulk',
+            ids: Array.from(selectedIds)
+        });
+        setDeleteProgress({ isProcessing: false, current: 0, total: selectedIds.size, success: 0, failed: 0, errors: [], completed: false });
+    };
+
+    // Execute Deletion
+    const executeDelete = async () => {
+        const { ids } = deleteModal;
+        setDeleteProgress(prev => ({ ...prev, isProcessing: true, total: ids.length }));
+
+        const successIds = new Set<string>();
+        const newErrors: string[] = [];
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            setDeleteProgress(prev => ({ ...prev, current: i + 1 }));
+
+            try {
+                const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+
+                if (data.success) {
+                    successIds.add(id);
+                    successCount++;
+                } else {
+                    newErrors.push(`Failed to delete product ${id}: ${data.error}`);
+                    failCount++;
+                }
+            } catch (err) {
+                newErrors.push(`Network error for product ${id}`);
+                failCount++;
             }
-        } catch (error) {
-            console.error('Error deleting product:', error);
-            alert('Something went wrong. Please try again.');
-        } finally {
-            setIsDeleting(null);
+
+            // Update counts live
+            setDeleteProgress(prev => ({ ...prev, success: successCount, failed: failCount, errors: newErrors }));
         }
+
+        // Cleanup local state
+        if (successIds.size > 0) {
+            setStoreProducts(prev => prev.filter(p => !successIds.has(p.id)));
+
+            // If bulk, remove successfully deleted from selection
+            if (deleteModal.type === 'bulk') {
+                const newSelected = new Set(selectedIds);
+                successIds.forEach(id => newSelected.delete(id));
+                setSelectedIds(newSelected);
+            }
+        }
+
+        setDeleteProgress(prev => ({ ...prev, isProcessing: false, completed: true }));
+    };
+
+    const closeDeleteModal = () => {
+        setDeleteModal(prev => ({ ...prev, isOpen: false }));
+        // Reset progress
+        setDeleteProgress({ isProcessing: false, current: 0, total: 0, success: 0, failed: 0, errors: [], completed: false });
     };
 
     // Bulk upload state
@@ -248,6 +373,11 @@ export default function ProductsPage() {
                 ...editingProduct,
                 featuredImage,
                 isVisible: editingProduct.status === 'active',
+                variants: editingProduct.variants.map(v => ({
+                    ...v,
+                    prices: v.prices || {},
+                    compareAtPrices: v.compareAtPrices || {}
+                })),
                 updatedAt: new Date()
             };
 
@@ -260,7 +390,9 @@ export default function ProductsPage() {
 
             if (data.success) {
                 setStoreProducts(prev => prev.map(p => p.id === editingProduct.id ? updatedProduct : p));
-                setEditingProduct(null);
+                // Keep the modal open
+                // setEditingProduct(null); 
+                alert('Product saved successfully!');
             } else {
                 alert(data.error || 'Failed to update product');
             }
@@ -399,11 +531,20 @@ export default function ProductsPage() {
             const res = await fetch(`/api/cj/product/${cjProductId}?countryCode=IN`);
             const data = await res.json();
             if (data.success) {
+                console.log('CJ Product Data:', data.data);
+                if (data.data.variants && data.data.variants.length > 0) {
+                    console.log('Sample Variant:', data.data.variants[0]);
+                }
                 setImportModalProduct(data.data);
                 setIndiaShippingInfo(data.data.shippingInfo);
                 // Select all variants by default
                 const vids = data.data.variants?.map((v: any) => v.vid) || [];
                 setSelectedVariants(new Set(vids));
+
+                // Initialize selected images with all product images
+                if (data.data.productImages) {
+                    setSelectedImportImages(new Set(data.data.productImages));
+                }
             } else {
                 alert(data.error || 'Failed to fetch product details');
                 setIsImportModalOpen(false);
@@ -434,6 +575,7 @@ export default function ProductsPage() {
                     cjProductId,
                     marginPercent: importMargin,
                     selectedVariants: Array.from(selectedVariants),
+                    selectedImages: Array.from(selectedImportImages),
                     status: 'draft'
                 }),
             });
@@ -457,6 +599,121 @@ export default function ProductsPage() {
                 return newSet;
             });
         }
+    };
+
+    // --- Bulk Import Logic ---
+    const [selectedCjIds, setSelectedCjIds] = useState<Set<string>>(new Set());
+    const [importProgress, setImportProgress] = useState({
+        isProcessing: false,
+        current: 0,
+        total: 0,
+        success: 0,
+        failed: 0,
+        errors: [] as string[],
+        completed: false
+    });
+
+    const toggleCjSelect = (id: string) => {
+        setSelectedCjIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        });
+    };
+
+    const toggleCjSelectAll = () => {
+        if (selectedCjIds.size === cjProducts.length) {
+            setSelectedCjIds(new Set());
+        } else {
+            setSelectedCjIds(new Set(cjProducts.map(p => p.id)));
+        }
+    };
+
+    const handleBulkCjImport = async () => {
+        const idsToImport = Array.from(selectedCjIds);
+        if (idsToImport.length === 0) return;
+
+        setImportProgress({
+            isProcessing: true,
+            current: 0,
+            total: idsToImport.length,
+            success: 0,
+            failed: 0,
+            errors: [],
+            completed: false
+        });
+
+        let successCount = 0;
+        let failCount = 0;
+        const newErrors: string[] = [];
+        const successIds = new Set<string>();
+
+        // Disable standard importing indicator during bulk (using modal instead)
+
+        for (let i = 0; i < idsToImport.length; i++) {
+            const cjProductId = idsToImport[i];
+            setImportProgress(prev => ({ ...prev, current: i + 1 }));
+
+            try {
+                // Check if already imported locally to avoid unnecessary API calls if possible,
+                // but existing check in backend is safer.
+
+                const res = await fetch('/api/cj/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cjProductId,
+                        marginPercent: importMargin,
+                        status: 'draft',
+                        fast: true // FAST MODE: Metadata only
+                    }),
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    successCount++;
+                    successIds.add(cjProductId);
+                    setImportedProducts(prev => new Set(prev).add(cjProductId));
+
+                    // Trigger Asset Migration in background (don't await)
+                    fetch('/api/admin/migrate-product-assets', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ productId: data.data.id })
+                    }).catch(err => console.error('Background migration failed:', err));
+
+                } else {
+                    failCount++;
+                    newErrors.push(`ID ${cjProductId}: ${data.error}`);
+                }
+
+            } catch (err) {
+                console.error(`Bulk import error for ${cjProductId}`, err);
+                failCount++;
+                newErrors.push(`ID ${cjProductId}: Network error`);
+            }
+
+            setImportProgress(prev => ({ ...prev, success: successCount, failed: failCount, errors: newErrors }));
+        }
+
+        // Cleanup
+        if (successIds.size > 0) {
+            // Uncheck successfully imported
+            setSelectedCjIds(prev => {
+                const newSet = new Set(prev);
+                successIds.forEach(id => newSet.delete(id));
+                return newSet;
+            });
+            fetchStoreProducts();
+        }
+
+        setImportProgress(prev => ({ ...prev, isProcessing: false, completed: true }));
+    };
+
+    const closeImportProgressModal = () => {
+        setImportProgress({ isProcessing: false, current: 0, total: 0, success: 0, failed: 0, errors: [], completed: false });
     };
 
     const importProduct = (id: string) => handleOpenImportModal(id);
@@ -676,6 +933,28 @@ export default function ProductsPage() {
                                         {status}
                                     </button>
                                 ))}
+                                <div style={{ display: 'flex', gap: '8px', backgroundColor: '#f5f5f7', padding: '4px', borderRadius: '10px' }}>
+                                    {['USD', 'INR'].map(curr => (
+                                        <button
+                                            key={curr}
+                                            onClick={() => setAdminPriceCurrency(curr as 'USD' | 'INR')}
+                                            style={{
+                                                padding: '8px 16px',
+                                                border: 'none',
+                                                borderRadius: '8px',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                                backgroundColor: adminPriceCurrency === curr ? '#000' : 'transparent',
+                                                color: adminPriceCurrency === curr ? '#fff' : '#666',
+                                                boxShadow: adminPriceCurrency === curr ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                                transition: 'all 0.2s',
+                                            }}
+                                        >
+                                            {curr}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
@@ -739,7 +1018,7 @@ export default function ProductsPage() {
                                         Set to Draft
                                     </button>
                                     <button
-                                        onClick={handleBulkDelete}
+                                        onClick={handleBulkDeleteClick}
                                         disabled={isBulkProcessing}
                                         style={{
                                             padding: '8px 16px',
@@ -811,6 +1090,7 @@ export default function ProductsPage() {
                                         </th>
                                         <th style={{ padding: '16px 0', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Product</th>
                                         <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>SKU</th>
+                                        <th style={{ padding: '16px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Sales</th>
                                         <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Price</th>
                                         <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Cost</th>
                                         <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Margin</th>
@@ -856,11 +1136,22 @@ export default function ProductsPage() {
                                                 </div>
                                             </td>
                                             <td style={{ padding: '16px', fontSize: '0.85rem', fontFamily: 'monospace', color: '#666' }}>{product.sku}</td>
+                                            <td style={{ padding: '16px', textAlign: 'center' }}>
+                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', backgroundColor: '#f0f9ff', color: '#0369a1', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 700 }}>
+                                                    {product.totalSales || 0}
+                                                </div>
+                                            </td>
                                             <td style={{ padding: '16px', textAlign: 'right', fontSize: '0.9rem', fontWeight: 600 }}>
-                                                {(product as any).currency === 'USD' ? '$' : '₹'}{product.price?.toLocaleString((product as any).currency === 'USD' ? 'en-US' : 'en-IN')}
+                                                {adminPriceCurrency === 'USD' ? '$' : '₹'}
+                                                {adminPriceCurrency === 'USD'
+                                                    ? product.price?.toLocaleString('en-US')
+                                                    : usdToInr(product.price).toLocaleString('en-IN')}
                                             </td>
                                             <td style={{ padding: '16px', textAlign: 'right', fontSize: '0.85rem', color: '#888' }}>
-                                                {(product as any).currency === 'USD' ? '$' : '₹'}{product.costPrice?.toLocaleString((product as any).currency === 'USD' ? 'en-US' : 'en-IN')}
+                                                {adminPriceCurrency === 'USD' ? '$' : '₹'}
+                                                {adminPriceCurrency === 'USD'
+                                                    ? product.costPrice?.toLocaleString('en-US')
+                                                    : usdToInr(product.costPrice).toLocaleString('en-IN')}
                                             </td>
                                             <td style={{ padding: '16px', textAlign: 'right' }}>
                                                 <span style={{
@@ -941,7 +1232,7 @@ export default function ProductsPage() {
                                                         <Edit2 size={16} style={{ color: '#666' }} />
                                                     </button>
                                                     <button
-                                                        onClick={() => handleDeleteProduct(product.id)}
+                                                        onClick={() => handleDeleteClick(product.id, product.name)}
                                                         disabled={isDeleting === product.id}
                                                         style={{
                                                             padding: '8px',
@@ -979,22 +1270,29 @@ export default function ProductsPage() {
                     {/* Search & Filters */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                            <form onSubmit={handleCJSearch} style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    fetchCJProducts(cjSearchQuery, 1);
+                                }}
+                                style={{ display: 'flex', gap: '12px', flex: 1 }}
+                            >
                                 <div style={{ position: 'relative', flex: 1 }}>
-                                    <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
+                                    <Search size={20} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
                                     <input
                                         type="text"
-                                        placeholder="Search CJ Dropshipping catalogue..."
+                                        placeholder="Search CJ Dropshipping..."
                                         value={cjSearchQuery}
                                         onChange={(e) => setCjSearchQuery(e.target.value)}
                                         style={{
                                             width: '100%',
-                                            padding: '14px 16px 14px 44px',
-                                            border: '1px solid #e5e5e5',
+                                            padding: '14px 14px 14px 48px',
                                             borderRadius: '12px',
-                                            fontSize: '0.95rem',
+                                            border: '1px solid #e5e5e5',
+                                            backgroundColor: '#fff',
+                                            fontSize: '1rem',
                                             outline: 'none',
-                                            backgroundColor: '#fff'
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
                                         }}
                                     />
                                 </div>
@@ -1015,6 +1313,32 @@ export default function ProductsPage() {
                                     Search
                                 </button>
                             </form>
+
+                            {/* Bulk Import Action */}
+                            {selectedCjIds.size > 0 && (
+                                <button
+                                    onClick={handleBulkCjImport}
+                                    style={{
+                                        padding: '14px 24px',
+                                        backgroundColor: '#000',
+                                        color: '#fff',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        fontSize: '0.95rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        animation: 'fadeIn 0.2s ease-out'
+                                    }}
+                                >
+                                    <Download size={18} />
+                                    Import Selected ({selectedCjIds.size})
+                                </button>
+                            )}
+
                             <button
                                 onClick={() => setShowCjFilters(!showCjFilters)}
                                 style={{
@@ -1139,13 +1463,34 @@ export default function ProductsPage() {
                         color: '#0369a1',
                         display: 'flex',
                         alignItems: 'center',
+                        justifyContent: 'space-between',
                         gap: '12px'
                     }}>
-                        <Package size={20} />
-                        <div>
-                            <strong>CJ Dropshipping Integration</strong> — Search and import products directly from CJ Dropshipping.
-                            Products are imported with a 50% margin. You can edit pricing after import.
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <Package size={20} />
+                            <div>
+                                <strong>CJ Dropshipping Integration</strong> — Search and import products directly from CJ Dropshipping.
+                                Products are imported with a 50% margin. You can edit pricing after import.
+                            </div>
                         </div>
+
+                        {/* Select All Toggle */}
+                        {cjProducts.length > 0 && (
+                            <button
+                                onClick={toggleCjSelectAll}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#0369a1',
+                                    fontWeight: 600,
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    textDecoration: 'underline'
+                                }}
+                            >
+                                {selectedCjIds.size === cjProducts.length ? 'Deselect All' : 'Select All on Page'}
+                            </button>
+                        )}
                     </div>
 
                     {/* CJ Error */}
@@ -1179,19 +1524,27 @@ export default function ProductsPage() {
                                 gap: '20px'
                             }}>
                                 {cjProducts.map((product) => {
-                                    const isImporting = importingProducts.has(product.id);
-                                    const isImported = importedProducts.has(product.id);
+                                    // CAST to any to avoid PID error if type definition is outdated
+                                    const pAny = product as any;
+                                    const pid = pAny.pid || pAny.id; // Use PID
+
+                                    const isImporting = importingProducts.has(pid);
+                                    const isImported = importedProducts.has(pid);
+                                    const isSelected = selectedCjIds.has(pid);
 
                                     return (
                                         <div
-                                            key={product.id}
+                                            key={pid}
                                             style={{
                                                 backgroundColor: '#fff',
                                                 borderRadius: '16px',
-                                                border: '1px solid #eee',
+                                                border: isSelected ? '2px solid #000' : '1px solid #eee',
                                                 overflow: 'hidden',
                                                 transition: 'all 0.2s',
+                                                cursor: 'pointer',
+                                                position: 'relative'
                                             }}
+                                            onClick={() => toggleCjSelect(pid)}
                                         >
                                             {/* Product Image */}
                                             <div style={{
@@ -1226,7 +1579,7 @@ export default function ProductsPage() {
                                                 <div
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        if (!product.shippingStatus || product.shippingStatus === 'unknown') checkProductShipping(product.id);
+                                                        if (!pAny.shippingStatus || pAny.shippingStatus === 'unknown') checkProductShipping(pid);
                                                     }}
                                                     style={{
                                                         position: 'absolute',
@@ -1316,7 +1669,10 @@ export default function ProductsPage() {
 
                                                 <div style={{ display: 'flex', gap: '8px' }}>
                                                     <button
-                                                        onClick={() => importProduct(product.id)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            importProduct(pid);
+                                                        }}
                                                         disabled={isImporting || isImported}
                                                         style={{
                                                             flex: 1,
@@ -1353,7 +1709,8 @@ export default function ProductsPage() {
                                                         )}
                                                     </button>
                                                     <a
-                                                        href={`https://cjdropshipping.com/product/${product.id}`}
+                                                        href={`https://cjdropshipping.com/product/${pid}`}
+                                                        onClick={(e) => e.stopPropagation()}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         style={{
@@ -1498,7 +1855,54 @@ export default function ProductsPage() {
                                     {/* Left: General Info */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                                         <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid #eee' }}>
-                                            <img src={importModalProduct.productImage} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover' }} />
+                                            <img
+                                                src={importModalProduct.productImages && importModalProduct.productImages.length > 0 ? importModalProduct.productImages[0] : ''}
+                                                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover' }}
+                                            />
+                                        </div>
+
+                                        {/* Image Selection */}
+                                        <div style={{ padding: '16px', backgroundColor: '#fff', borderRadius: '16px', border: '1px solid #eee' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#444' }}>Select Images ({selectedImportImages.size})</label>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button
+                                                        onClick={() => setSelectedImportImages(new Set(importModalProduct.productImages || []))}
+                                                        style={{ fontSize: '0.7rem', color: '#000', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>All</button>
+                                                    <button
+                                                        onClick={() => setSelectedImportImages(new Set())}
+                                                        style={{ fontSize: '0.7rem', color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}>None</button>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                                                {(importModalProduct.productImages || []).map((img: string, idx: number) => (
+                                                    <div
+                                                        key={idx}
+                                                        onClick={() => {
+                                                            const newSet = new Set(selectedImportImages);
+                                                            if (newSet.has(img)) newSet.delete(img);
+                                                            else newSet.add(img);
+                                                            setSelectedImportImages(newSet);
+                                                        }}
+                                                        style={{
+                                                            aspectRatio: '1',
+                                                            borderRadius: '8px',
+                                                            overflow: 'hidden',
+                                                            cursor: 'pointer',
+                                                            border: `2px solid ${selectedImportImages.has(img) ? '#000' : 'transparent'}`,
+                                                            opacity: selectedImportImages.has(img) ? 1 : 0.6,
+                                                            position: 'relative'
+                                                        }}
+                                                    >
+                                                        <img src={img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        {selectedImportImages.has(img) && (
+                                                            <div style={{ position: 'absolute', top: '4px', right: '4px', backgroundColor: '#000', borderRadius: '50%', padding: '2px' }}>
+                                                                <Check size={10} color="#fff" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
 
                                         <div style={{
@@ -1571,8 +1975,19 @@ export default function ProductsPage() {
                                                     key={v.vid}
                                                     onClick={() => {
                                                         const newSelected = new Set(selectedVariants);
-                                                        if (newSelected.has(v.vid)) newSelected.delete(v.vid);
-                                                        else newSelected.add(v.vid);
+                                                        if (newSelected.has(v.vid)) {
+                                                            newSelected.delete(v.vid);
+                                                        } else {
+                                                            newSelected.add(v.vid);
+                                                            // Auto-select linked image if available
+                                                            const rawVImg = v.variantImage || v.image || v.img;
+                                                            if (rawVImg) {
+                                                                const vImg = cleanCjUrl(rawVImg);
+                                                                if (vImg) {
+                                                                    setSelectedImportImages(prev => new Set(prev).add(vImg));
+                                                                }
+                                                            }
+                                                        }
                                                         setSelectedVariants(newSelected);
                                                     }}
                                                     style={{
@@ -1975,10 +2390,26 @@ export default function ProductsPage() {
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                         {editingProduct.variants.map((v, idx) => (
-                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 40px', gap: '16px', alignItems: 'center', padding: '12px', border: '1px solid #f0f0f1', borderRadius: '10px' }}>
+                                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 0.8fr 40px', gap: '12px', alignItems: 'center', padding: '12px', border: '1px solid #f0f0f1', borderRadius: '10px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                     {v.image && <img src={v.image} style={{ width: '32px', height: '32px', borderRadius: '4px', objectFit: 'cover' }} />}
-                                                    <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{v.name || v.key}</span>
+                                                    <input
+                                                        type="text"
+                                                        value={v.name || v.key}
+                                                        onChange={(e) => {
+                                                            const newVariants = [...editingProduct.variants];
+                                                            newVariants[idx] = { ...v, name: e.target.value };
+                                                            setEditingProduct({ ...editingProduct, variants: newVariants });
+                                                        }}
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '6px',
+                                                            border: '1px solid #ddd',
+                                                            borderRadius: '6px',
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: 500
+                                                        }}
+                                                    />
                                                 </div>
                                                 <div style={{ position: 'relative' }}>
                                                     <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem', color: '#888' }}>
@@ -1986,6 +2417,7 @@ export default function ProductsPage() {
                                                     </span>
                                                     <input
                                                         type="number"
+                                                        placeholder="Price"
                                                         value={adminPriceCurrency === 'USD'
                                                             ? (v.prices?.USD ?? v.price)
                                                             : (v.prices?.INR ?? usdToInr(v.price))}
@@ -1998,6 +2430,31 @@ export default function ProductsPage() {
                                                                 ...v,
                                                                 prices: newPrices,
                                                                 price: adminPriceCurrency === (editingProduct.currency || 'USD') ? val : v.price
+                                                            };
+                                                            setEditingProduct({ ...editingProduct, variants: newVariants });
+                                                        }}
+                                                        style={{ width: '100%', padding: '6px 6px 6px 20px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '0.85rem' }}
+                                                    />
+                                                </div>
+                                                <div style={{ position: 'relative' }}>
+                                                    <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem', color: '#888' }}>
+                                                        {adminPriceCurrency === 'USD' ? '$' : '₹'}
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="Compare At"
+                                                        value={adminPriceCurrency === 'USD'
+                                                            ? (v.compareAtPrices?.USD ?? v.compareAtPrice)
+                                                            : (v.compareAtPrices?.INR ?? usdToInr(v.compareAtPrice))}
+                                                        onChange={(e) => {
+                                                            const val = parseFloat(e.target.value) || 0;
+                                                            const newVariants = [...editingProduct.variants];
+                                                            const existingPrices = v.compareAtPrices || {};
+                                                            const newPrices = { ...existingPrices, [adminPriceCurrency]: val };
+                                                            newVariants[idx] = {
+                                                                ...v,
+                                                                compareAtPrices: newPrices,
+                                                                compareAtPrice: adminPriceCurrency === (editingProduct.currency || 'USD') ? val : v.compareAtPrice
                                                             };
                                                             setEditingProduct({ ...editingProduct, variants: newVariants });
                                                         }}
@@ -2112,7 +2569,7 @@ export default function ProductsPage() {
                                                 )}
                                             </div>
 
-                                            {!hasVariants && (
+                                            {!hasVariants ? (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                                     <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#444' }}>
                                                         Compare at Price ({adminPriceCurrency})
@@ -2138,6 +2595,30 @@ export default function ProductsPage() {
                                                             style={{ width: '100%', padding: '12px 12px 12px 30px', border: '1px solid #ddd', borderRadius: '10px', height: '46px', fontSize: '0.95rem' }}
                                                         />
                                                     </div>
+                                                </div>
+                                            ) : (
+                                                // If variants exist, use this empty column for Shipping Info
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '12px', border: '1px solid #dcfce7' }}>
+                                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#166534', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span>Shipping to India (IN)</span>
+                                                        {loadingEditShipping && <Loader2 size={12} className="animate-spin" />}
+                                                    </div>
+
+                                                    {editShippingInfo && editShippingInfo.length > 0 ? (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '120px', overflowY: 'auto' }}>
+                                                            {editShippingInfo.map((opt: any, idx: number) => (
+                                                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', padding: '4px 0', borderBottom: idx < editShippingInfo.length - 1 ? '1px dashed #bdf0d0' : 'none' }}>
+                                                                    <div>
+                                                                        <div style={{ fontWeight: 600, color: '#14532d' }}>{opt.name}</div>
+                                                                        <div style={{ color: '#15803d' }}>{opt.aging} days</div>
+                                                                    </div>
+                                                                    <div style={{ fontWeight: 700, color: '#166534' }}>${opt.amount}</div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : !loadingEditShipping ? (
+                                                        <div style={{ fontSize: '0.75rem', color: '#991b1b' }}>No shipping info found.</div>
+                                                    ) : null}
                                                 </div>
                                             )}
 
@@ -2273,6 +2754,224 @@ export default function ProductsPage() {
                     to { transform: translateY(0); opacity: 1; }
                 }
             `}</style>
+            {/* Delete Confirmation Modal */}
+            {deleteModal.isOpen && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: '#fff',
+                        borderRadius: '16px',
+                        padding: '24px',
+                        width: '100%',
+                        maxWidth: '450px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+                    }}>
+                        {!deleteProgress.isProcessing && !deleteProgress.completed ? (
+                            <>
+                                <h3 style={{ margin: '0 0 12px', fontSize: '1.25rem' }}>
+                                    Confirm Deletion
+                                </h3>
+                                <p style={{ color: '#666', marginBottom: '24px', lineHeight: '1.5' }}>
+                                    {deleteModal.type === 'single'
+                                        ? <>Are you sure you want to delete <strong>{deleteModal.productName}</strong>? This action cannot be undone.</>
+                                        : <>Are you sure you want to delete <strong>{deleteModal.ids.length} products</strong>? This action cannot be undone.</>
+                                    }
+                                </p>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                                    <button
+                                        onClick={closeDeleteModal}
+                                        style={{
+                                            padding: '10px 16px',
+                                            borderRadius: '8px',
+                                            border: '1px solid #e5e5e5',
+                                            backgroundColor: '#fff',
+                                            cursor: 'pointer',
+                                            fontWeight: 500
+                                        }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={executeDelete}
+                                        style={{
+                                            padding: '10px 16px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            backgroundColor: '#ef4444',
+                                            color: '#fff',
+                                            cursor: 'pointer',
+                                            fontWeight: 600
+                                        }}
+                                    >
+                                        Delete {deleteModal.ids.length > 1 ? `(${deleteModal.ids.length})` : ''}
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h3 style={{ margin: '0 0 16px', fontSize: '1.25rem' }}>
+                                    {deleteProgress.completed ? 'Deletion Complete' : 'Deleting Products...'}
+                                </h3>
+
+                                {/* Progress Bar */}
+                                <div style={{
+                                    height: '8px',
+                                    backgroundColor: '#f3f4f6',
+                                    borderRadius: '4px',
+                                    marginBottom: '16px',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${(deleteProgress.current / deleteProgress.total) * 100}%`,
+                                        backgroundColor: deleteProgress.completed
+                                            ? (deleteProgress.failed > 0 ? '#f59e0b' : '#166534')
+                                            : '#2563eb',
+                                        transition: 'width 0.3s ease'
+                                    }} />
+                                </div>
+
+                                {/* Stats */}
+                                <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+                                    <div style={{ flex: 1, padding: '12px', borderRadius: '8px', backgroundColor: '#f0fdf4', color: '#166534' }}>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Success</div>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{deleteProgress.success}</div>
+                                    </div>
+                                    {deleteProgress.failed > 0 && (
+                                        <div style={{ flex: 1, padding: '12px', borderRadius: '8px', backgroundColor: '#fef2f2', color: '#991b1b' }}>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Failed</div>
+                                            <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{deleteProgress.failed}</div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Errors List */}
+                                {deleteProgress.errors.length > 0 && (
+                                    <div style={{
+                                        maxHeight: '150px',
+                                        overflowY: 'auto',
+                                        backgroundColor: '#fff1f2',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        fontSize: '0.85rem',
+                                        color: '#be123c',
+                                        marginBottom: '20px'
+                                    }}>
+                                        {deleteProgress.errors.map((err, idx) => (
+                                            <div key={idx} style={{ marginBottom: '4px' }}>• {err}</div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {deleteProgress.completed && (
+                                    <button
+                                        onClick={closeDeleteModal}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            backgroundColor: '#000',
+                                            color: '#fff',
+                                            cursor: 'pointer',
+                                            fontWeight: 600
+                                        }}
+                                    >
+                                        Close
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+            {/* Import Progress Modal */}
+            {importProgress.isProcessing || importProgress.completed ? (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2200,
+                    padding: '24px'
+                }}>
+                    <div style={{
+                        backgroundColor: '#fff',
+                        borderRadius: '24px',
+                        width: '100%',
+                        maxWidth: '500px',
+                        padding: '32px',
+                        boxShadow: '0 20px 50px rgba(0,0,0,0.2)',
+                        textAlign: 'center'
+                    }}>
+                        <h3 style={{ margin: '0 0 16px', fontSize: '1.25rem', fontWeight: 700 }}>
+                            {importProgress.completed ? 'Import Complete!' : 'Importing Products...'}
+                        </h3>
+
+                        {/* Progress Bar */}
+                        <div style={{ width: '100%', height: '8px', backgroundColor: '#f3f4f6', borderRadius: '4px', overflow: 'hidden', marginBottom: '24px' }}>
+                            <div style={{
+                                width: `${(importProgress.current / importProgress.total) * 100}%`,
+                                height: '100%',
+                                backgroundColor: importProgress.completed ? '#10b981' : '#000',
+                                transition: 'width 0.3s ease-out'
+                            }}></div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                            <div style={{ padding: '16px', backgroundColor: '#f0fdf4', borderRadius: '12px', color: '#166534' }}>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{importProgress.success}</div>
+                                <div style={{ fontSize: '0.85rem' }}>Successful</div>
+                            </div>
+                            <div style={{ padding: '16px', backgroundColor: '#fef2f2', borderRadius: '12px', color: '#991b1b' }}>
+                                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{importProgress.failed}</div>
+                                <div style={{ fontSize: '0.85rem' }}>Failed</div>
+                            </div>
+                        </div>
+
+                        {importProgress.errors.length > 0 && (
+                            <div style={{ textAlign: 'left', marginBottom: '24px', maxHeight: '100px', overflowY: 'auto', padding: '12px', backgroundColor: '#f9fafb', borderRadius: '8px', fontSize: '0.85rem', color: '#666' }}>
+                                {importProgress.errors.map((err, i) => (
+                                    <div key={i} style={{ marginBottom: '4px' }}>• {err}</div>
+                                ))}
+                            </div>
+                        )}
+
+                        {importProgress.completed && (
+                            <button
+                                onClick={closeImportProgressModal}
+                                style={{
+                                    padding: '12px 32px',
+                                    backgroundColor: '#000',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    width: '100%'
+                                }}
+                            >
+                                Close & Refresh
+                            </button>
+                        )}
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }
