@@ -77,6 +77,13 @@ export interface Product {
     seoTitle?: string;
     seoDescription?: string;
 
+    // Google Merchant Fields
+    availableCountries?: string[]; // Country codes where product ships (e.g., ['IN', 'US', 'GB'])
+    brand?: string;
+    gtin?: string; // Global Trade Item Number (UPC, EAN, ISBN)
+    mpn?: string; // Manufacturer Part Number
+    condition?: 'new' | 'refurbished' | 'used';
+
     // Timestamps
     createdAt: Date;
     updatedAt: Date;
@@ -213,5 +220,10 @@ export function convertCJProductToProduct(
         status: 'draft',
         isVisible: false,
         isFeatured: false,
+
+        // Google Merchant defaults
+        availableCountries: ['IN', 'US', 'GB', 'CA', 'AU'], // Default to major markets
+        brand: 'Dripzy',
+        condition: 'new',
     };
 }

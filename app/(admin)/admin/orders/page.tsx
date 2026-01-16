@@ -29,6 +29,11 @@ interface Order {
     }[];
     subtotal: number;
     shipping: number;
+    shippingInfo?: {
+        method: string;
+        estimatedDelivery: string;
+        code?: string;
+    };
     total: number;
     currency: string;
     paymentMethod: string;
@@ -285,6 +290,7 @@ export default function OrdersPage() {
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Payment</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Status</th>
                                 <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Fulfillment</th>
+                                <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Shipping</th>
                                 <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Total</th>
                                 <th style={{ padding: '16px 24px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>Actions</th>
                             </tr>
@@ -372,6 +378,31 @@ export default function OrdersPage() {
                                         }}>
                                             {order.fulfillmentStatus}
                                         </span>
+                                    </td>
+                                    <td style={{ padding: '16px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '6px',
+                                                padding: '5px 10px',
+                                                borderRadius: '6px',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 600,
+                                                backgroundColor: order.shippingInfo?.method?.toLowerCase().includes('express') || order.shippingInfo?.method?.toLowerCase().includes('dhl') ? '#fef3c7' : '#f0fdf4',
+                                                color: order.shippingInfo?.method?.toLowerCase().includes('express') || order.shippingInfo?.method?.toLowerCase().includes('dhl') ? '#92400e' : '#166534',
+                                                maxWidth: '130px',
+                                                textOverflow: 'ellipsis',
+                                                overflow: 'hidden',
+                                                whiteSpace: 'nowrap'
+                                            }} title={order.shippingInfo?.method || 'Standard'}>
+                                                <Truck size={12} />
+                                                {order.shippingInfo?.method || 'Standard'}
+                                            </span>
+                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#000' }}>
+                                                {formatPrice(order.shipping, order.currency)}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td style={{ padding: '16px', textAlign: 'right', fontSize: '0.9rem', fontWeight: 600 }}>
                                         {formatPrice(order.total, order.currency)}

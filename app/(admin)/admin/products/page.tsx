@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronRight, Package, Image as ImageIcon, Download, ExternalLink, RefreshCw, X, Check, AlertCircle, Loader2, Upload, GripVertical, Sliders, Filter } from 'lucide-react';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -98,6 +98,10 @@ export default function ProductsPage() {
     const [importedProducts, setImportedProducts] = useState<Set<string>>(new Set());
     const [importError, setImportError] = useState<string | null>(null);
     const [selectedImportImages, setSelectedImportImages] = useState<Set<string>>(new Set());
+
+    // Background import state & cancellation
+    const importCancelledRef = useRef(false);
+    const [showImportBanner, setShowImportBanner] = useState(false);
 
     // Edit/Delete state
     const [editingProduct, setEditingProduct] = useState<StoreProduct | null>(null);
@@ -634,6 +638,9 @@ export default function ProductsPage() {
         const idsToImport = Array.from(selectedCjIds);
         if (idsToImport.length === 0) return;
 
+        // Reset cancellation flag
+        importCancelledRef.current = false;
+
         setImportProgress({
             isProcessing: true,
             current: 0,
@@ -649,16 +656,20 @@ export default function ProductsPage() {
         const newErrors: string[] = [];
         const successIds = new Set<string>();
 
-        // Disable standard importing indicator during bulk (using modal instead)
+        // Helper for delay between requests
+        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
         for (let i = 0; i < idsToImport.length; i++) {
+            // Check for cancellation
+            if (importCancelledRef.current) {
+                newErrors.push('Import cancelled by user');
+                break;
+            }
+
             const cjProductId = idsToImport[i];
             setImportProgress(prev => ({ ...prev, current: i + 1 }));
 
             try {
-                // Check if already imported locally to avoid unnecessary API calls if possible,
-                // but existing check in backend is safer.
-
                 const res = await fetch('/api/cj/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -686,7 +697,14 @@ export default function ProductsPage() {
 
                 } else {
                     failCount++;
-                    newErrors.push(`ID ${cjProductId}: ${data.error}`);
+                    // Check for rate limiting
+                    if (data.error?.toLowerCase().includes('too many') || data.error?.toLowerCase().includes('rate limit')) {
+                        newErrors.push(`ID ${cjProductId}: Rate limited - waiting longer...`);
+                        // Wait extra time if rate limited
+                        await delay(3000);
+                    } else {
+                        newErrors.push(`ID ${cjProductId}: ${data.error}`);
+                    }
                 }
 
             } catch (err) {
@@ -696,6 +714,12 @@ export default function ProductsPage() {
             }
 
             setImportProgress(prev => ({ ...prev, success: successCount, failed: failCount, errors: newErrors }));
+
+            // Add delay between requests to avoid rate limiting (1.5 seconds)
+            // Don't delay after the last item
+            if (i < idsToImport.length - 1 && !importCancelledRef.current) {
+                await delay(1500);
+            }
         }
 
         // Cleanup
@@ -710,10 +734,22 @@ export default function ProductsPage() {
         }
 
         setImportProgress(prev => ({ ...prev, isProcessing: false, completed: true }));
+        setShowImportBanner(false); // Hide banner when complete
+    };
+
+    // Cancel the import process
+    const cancelImport = () => {
+        importCancelledRef.current = true;
+    };
+
+    // Minimize modal to banner - import continues in background
+    const minimizeImportModal = () => {
+        setShowImportBanner(true);
     };
 
     const closeImportProgressModal = () => {
         setImportProgress({ isProcessing: false, current: 0, total: 0, success: 0, failed: 0, errors: [], completed: false });
+        setShowImportBanner(false);
     };
 
     const importProduct = (id: string) => handleOpenImportModal(id);
@@ -848,7 +884,6 @@ export default function ProductsPage() {
                 </button>
             </div>
 
-            {/* Import Error Toast */}
             {importError && (
                 <div style={{
                     padding: '12px 16px',
@@ -867,6 +902,74 @@ export default function ProductsPage() {
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
                     >
                         <X size={16} />
+                    </button>
+                </div>
+            )}
+
+            {/* Background Import Progress Banner */}
+            {showImportBanner && importProgress.isProcessing && (
+                <div style={{
+                    padding: '16px 20px',
+                    background: 'linear-gradient(135deg, #000 0%, #333 100%)',
+                    borderRadius: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '20px',
+                    color: '#fff',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+                }}>
+                    <div style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}>
+                        <Loader2 size={20} className="animate-spin" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '6px' }}>
+                            Importing Products ({importProgress.current}/{importProgress.total})
+                        </div>
+                        <div style={{
+                            width: '100%',
+                            height: '6px',
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                            borderRadius: '3px',
+                            overflow: 'hidden'
+                        }}>
+                            <div style={{
+                                width: `${(importProgress.current / importProgress.total) * 100}%`,
+                                height: '100%',
+                                backgroundColor: '#10b981',
+                                transition: 'width 0.3s ease-out',
+                                borderRadius: '3px'
+                            }}></div>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', marginTop: '6px', opacity: 0.7 }}>
+                            ✓ {importProgress.success} imported · ✗ {importProgress.failed} failed · ~{Math.ceil((importProgress.total - importProgress.current) * 1.5)}s remaining
+                        </div>
+                    </div>
+                    <button
+                        onClick={cancelImport}
+                        style={{
+                            padding: '10px 20px',
+                            backgroundColor: 'rgba(239, 68, 68, 0.9)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '10px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                    >
+                        <X size={16} />
+                        Cancel
                     </button>
                 </div>
             )}
@@ -2896,7 +2999,7 @@ export default function ProductsPage() {
                 </div>
             )}
             {/* Import Progress Modal */}
-            {importProgress.isProcessing || importProgress.completed ? (
+            {(importProgress.isProcessing && !showImportBanner) || importProgress.completed ? (
                 <div style={{
                     position: 'fixed',
                     top: 0,
@@ -2952,7 +3055,7 @@ export default function ProductsPage() {
                             </div>
                         )}
 
-                        {importProgress.completed && (
+                        {importProgress.completed ? (
                             <button
                                 onClick={closeImportProgressModal}
                                 style={{
@@ -2968,6 +3071,41 @@ export default function ProductsPage() {
                             >
                                 Close & Refresh
                             </button>
+                        ) : (
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button
+                                    onClick={minimizeImportModal}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px 24px',
+                                        backgroundColor: '#f5f5f7',
+                                        color: '#000',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem'
+                                    }}
+                                >
+                                    Minimize
+                                </button>
+                                <button
+                                    onClick={cancelImport}
+                                    style={{
+                                        flex: 1,
+                                        padding: '12px 24px',
+                                        backgroundColor: '#fee2e2',
+                                        color: '#991b1b',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem'
+                                    }}
+                                >
+                                    Cancel Import
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>

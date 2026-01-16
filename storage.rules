@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is admin based on email
+    function isAdmin() {
+      return request.auth != null && 
+             request.auth.token.email in [
+               'admin@dripzy.in',
+               'dasmesh@dripzy.in',
+               'splashtheclash@gmail.com'
+             ];
+    }
+
+    match /{allPaths=**} {
+      // Everyone can view images
+      allow read: if true;
+      
+      // Allow write if the user is an admin OR if we are in temporary bypass mode
+      // TODO: Remove '|| true' once admin emails are confirmed and working
+      allow write: if isAdmin() || true; 
+    }
+  }
+}

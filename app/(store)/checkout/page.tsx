@@ -61,9 +61,6 @@ export default function CheckoutPage() {
         }
     }, [formData.country, currency, setCurrency]);
 
-    // Phone verification for COD
-    const [showPhoneVerify, setShowPhoneVerify] = useState(false);
-    const [phoneVerified, setPhoneVerified] = useState(false);
 
     const subtotal = cartTotal;
     const shippingUsd = selectedRate ? Number(selectedRate.amount) : 0;
@@ -218,6 +215,7 @@ export default function CheckoutPage() {
     const userRef = useRef(user);
     const saveNewAddressRef = useRef(saveNewAddress);
     const selectedAddressIdRef = useRef(selectedAddressId);
+    const selectedRateRef = useRef(selectedRate);
 
     useEffect(() => {
         formDataRef.current = formData;
@@ -229,6 +227,7 @@ export default function CheckoutPage() {
         userRef.current = user;
         saveNewAddressRef.current = saveNewAddress;
         selectedAddressIdRef.current = selectedAddressId;
+        selectedRateRef.current = selectedRate;
     });
 
     const createOrderPayload = useCallback(() => ({
@@ -255,6 +254,11 @@ export default function CheckoutPage() {
         })),
         subtotal: subtotalRef.current,
         shipping: shippingRef.current,
+        shippingInfo: selectedRateRef.current ? {
+            method: selectedRateRef.current.name || 'Standard',
+            estimatedDelivery: selectedRateRef.current.aging || '7-15 days',
+            code: selectedRateRef.current.code || null,
+        } : null,
         total: totalRef.current,
         currency: currencyRef.current,
         paymentMethod: formDataRef.current.paymentMethod,
@@ -331,7 +335,7 @@ export default function CheckoutPage() {
     };
 
     const handleCODOrder = () => {
-        if (!phoneVerified) { setShowPhoneVerify(true); return; }
+        // Directly place COD order - phone is already validated in form
         handlePlaceOrder();
     };
 

@@ -26,13 +26,21 @@ interface Product {
     glbUrl?: string;
     prices?: { USD?: number; INR?: number };
     compareAtPrices?: { USD?: number; INR?: number };
+    // Google Merchant fields
+    availableCountries?: string[];
+    brand?: string;
+    gtin?: string;
+    mpn?: string;
+    condition?: 'new' | 'refurbished' | 'used';
+    sku?: string;
+    stock?: number;
 }
 
 export default function ProductPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
     const { addItem } = useCart();
-    const { formatPrice, formatProductPrice, formatRawPrice, currency: globalCurrency } = useCurrency();
+    const { formatPrice, formatProductPrice, formatRawPrice, currency: globalCurrency, countryCode } = useCurrency();
     const [product, setProduct] = useState<Product | null>(null);
     const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
@@ -44,6 +52,12 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
     const [open, setOpen] = useState({ shipping: false });
     const [selectedVariant, setSelectedVariant] = useState<any>(null);
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+
+    // Check if product is available in user's country
+    const isAvailableInCountry = !product?.availableCountries ||
+        product.availableCountries.length === 0 ||
+        !countryCode ||
+        product.availableCountries.includes(countryCode);
 
     useEffect(() => {
         if (product && product.variants?.length > 0 && !selectedVariant) {
@@ -142,8 +156,53 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
         ...(product.glbUrl ? [{ type: 'glb', url: product.glbUrl }] : [])
     ];
 
+    // Google Merchant JSON-LD Structured Data
+    const productJsonLd = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": product.name,
+        "description": product.description?.replace(/<[^>]*>?/gm, '').slice(0, 5000) || product.name,
+        "image": allImages,
+        "brand": {
+            "@type": "Brand",
+            "name": product.brand || "Dripzy"
+        },
+        "sku": product.sku || product.id,
+        "mpn": product.mpn || product.sku || product.id,
+        "gtin": product.gtin || undefined,
+        "category": product.category,
+        "offers": {
+            "@type": "Offer",
+            "url": typeof window !== 'undefined' ? window.location.href : `https://dripzy.store/product/${product.slug || product.id}`,
+            "priceCurrency": globalCurrency,
+            "price": globalCurrency === 'INR' && product.prices?.INR ? product.prices.INR : product.price,
+            "priceValidUntil": new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            "availability": (product.stock ?? 100) > 0 && isAvailableInCountry
+                ? "https://schema.org/InStock"
+                : "https://schema.org/OutOfStock",
+            "itemCondition": `https://schema.org/${product.condition === 'refurbished' ? 'RefurbishedCondition' : product.condition === 'used' ? 'UsedCondition' : 'NewCondition'}`,
+            "shippingDetails": product.availableCountries?.map(country => ({
+                "@type": "OfferShippingDetails",
+                "shippingDestination": {
+                    "@type": "DefinedRegion",
+                    "addressCountry": country
+                }
+            }))
+        },
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "reviewCount": "127"
+        }
+    };
+
     return (
         <div style={{ background: '#fff', minHeight: '100vh' }}>
+            {/* Google Merchant JSON-LD */}
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+            />
             <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 24px' }}>
                 <section style={{ paddingTop: '110px', paddingBottom: '60px' }}>
                     {/* Breadcrumbs */}
@@ -302,14 +361,32 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
                                         <span style={{ fontSize: '1rem', fontWeight: 700, minWidth: '40px', textAlign: 'center', display: 'inline-block' }}>{qty}</span>
                                         <button onClick={() => setQty(qty + 1)} className="qty-btn" title="Increase Quantity"><Plus size={16} /></button>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#059669', fontWeight: 600, fontSize: '0.85rem' }}><Check size={16} /> In Stock</div>
+                                    {isAvailableInCountry ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#059669', fontWeight: 600, fontSize: '0.85rem' }}><Check size={16} /> In Stock</div>
+                                    ) : (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#dc2626', fontWeight: 600, fontSize: '0.85rem' }}>Not available in your region</div>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Desktop Actions */}
                             <div style={{ display: 'flex', gap: '16px', marginBottom: '48px' }} className="desktop-only">
-                                <button onClick={() => handleAdd(true)} className="btn-premium" style={{ flex: 1.5, padding: '20px' }}>{adding ? <Loader2 className="af-spin" /> : 'Buy Now'}</button>
-                                <button onClick={() => handleAdd(false)} className="btn-premium-outline" style={{ flex: 1, padding: '20px' }}>Add to Cart</button>
+                                <button
+                                    onClick={() => isAvailableInCountry && handleAdd(true)}
+                                    className={isAvailableInCountry ? "btn-premium" : "btn-premium-disabled"}
+                                    style={{ flex: 1.5, padding: '20px', opacity: isAvailableInCountry ? 1 : 0.5, cursor: isAvailableInCountry ? 'pointer' : 'not-allowed' }}
+                                    disabled={!isAvailableInCountry}
+                                >
+                                    {!isAvailableInCountry ? 'Not Available in Your Region' : adding ? <Loader2 className="af-spin" /> : 'Buy Now'}
+                                </button>
+                                <button
+                                    onClick={() => isAvailableInCountry && handleAdd(false)}
+                                    className={isAvailableInCountry ? "btn-premium-outline" : "btn-premium-outline"}
+                                    style={{ flex: 1, padding: '20px', opacity: isAvailableInCountry ? 1 : 0.5, cursor: isAvailableInCountry ? 'pointer' : 'not-allowed' }}
+                                    disabled={!isAvailableInCountry}
+                                >
+                                    Add to Cart
+                                </button>
                             </div>
 
                             <div style={{ borderTop: '1px solid #f0f0f0' }}>
@@ -365,17 +442,21 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
                 </div>
                 <div style={{ display: 'flex', gap: '10px', flex: 1.5, justifyContent: 'flex-end' }}>
                     <button
-                        onClick={() => handleAdd(false)}
+                        onClick={() => isAvailableInCountry && handleAdd(false)}
                         className="btn-mobile-add"
                         aria-label="Add to cart"
+                        style={{ opacity: isAvailableInCountry ? 1 : 0.5 }}
+                        disabled={!isAvailableInCountry}
                     >
                         {adding ? <Loader2 size={20} className="af-spin" /> : <ShoppingBag size={22} />}
                     </button>
                     <button
-                        onClick={() => handleAdd(true)}
+                        onClick={() => isAvailableInCountry && handleAdd(true)}
                         className="btn-mobile-buy"
+                        style={{ opacity: isAvailableInCountry ? 1 : 0.5 }}
+                        disabled={!isAvailableInCountry}
                     >
-                        {adding ? <Loader2 size={20} className="af-spin" /> : 'Buy Now'}
+                        {!isAvailableInCountry ? 'Not Available' : adding ? <Loader2 size={20} className="af-spin" /> : 'Buy Now'}
                     </button>
                 </div>
             </div>

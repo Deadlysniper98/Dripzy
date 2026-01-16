@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Store, CreditCard, Truck, Bell, Shield, Globe, Save, Package, CheckCircle, XCircle, RefreshCw, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { Store, CreditCard, Truck, Bell, Shield, Globe, Save, Package, CheckCircle, XCircle, RefreshCw, ExternalLink, Loader2, AlertCircle, Search, BarChart3, ShoppingBag, Download, Copy, Check } from 'lucide-react';
 
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('general');
@@ -16,6 +16,12 @@ export default function SettingsPage() {
         accessToken?: string;
         expiresAt?: string;
     } | null>(null);
+
+    // Google Settings state
+    const [googleAnalyticsId, setGoogleAnalyticsId] = useState('');
+    const [searchConsoleId, setSearchConsoleId] = useState('');
+    const [merchantCenterId, setMerchantCenterId] = useState('');
+    const [copied, setCopied] = useState<string | null>(null);
 
     const handleSave = () => {
         setSaved(true);
@@ -96,6 +102,7 @@ export default function SettingsPage() {
         { id: 'payments', label: 'Payments', icon: CreditCard },
         { id: 'shipping', label: 'Shipping', icon: Truck },
         { id: 'integrations', label: 'Integrations', icon: Package },
+        { id: 'google', label: 'Google', icon: Globe },
         { id: 'notifications', label: 'Notifications', icon: Bell },
     ];
 
@@ -503,6 +510,259 @@ export default function SettingsPage() {
                                             Exchange rate for price conversion
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'google' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            {/* Google Analytics */}
+                            <div>
+                                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0, paddingBottom: '16px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <BarChart3 size={24} style={{ color: '#f59e0b' }} />
+                                    Google Analytics
+                                </h2>
+                                <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginTop: '16px' }}>
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <label style={labelStyle}>Measurement ID (GA4)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="G-XXXXXXXXXX"
+                                            value={googleAnalyticsId}
+                                            onChange={(e) => setGoogleAnalyticsId(e.target.value)}
+                                            style={inputStyle}
+                                        />
+                                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                                            Find this in Google Analytics → Admin → Data Streams → Web
+                                        </div>
+                                    </div>
+                                    <a
+                                        href="https://analytics.google.com/"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#0369a1', fontSize: '0.9rem', textDecoration: 'none' }}
+                                    >
+                                        Open Google Analytics <ExternalLink size={14} />
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Google Search Console */}
+                            <div>
+                                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0, paddingBottom: '16px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <Search size={24} style={{ color: '#4285f4' }} />
+                                    Google Search Console
+                                </h2>
+                                <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginTop: '16px' }}>
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <label style={labelStyle}>Site Verification Meta Tag</label>
+                                        <input
+                                            type="text"
+                                            placeholder="google-site-verification=xxxxxxxxxxxx"
+                                            value={searchConsoleId}
+                                            onChange={(e) => setSearchConsoleId(e.target.value)}
+                                            style={inputStyle}
+                                        />
+                                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                                            Add this to verify your site ownership in Search Console
+                                        </div>
+                                    </div>
+                                    <div style={{ marginBottom: '16px', padding: '16px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0369a1', marginBottom: '8px' }}>
+                                            Your Sitemap URL:
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <code style={{ flex: 1, padding: '8px 12px', backgroundColor: '#fff', borderRadius: '6px', fontSize: '0.85rem', border: '1px solid #e5e5e5' }}>
+                                                https://dripzy.store/sitemap.xml
+                                            </code>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText('https://dripzy.store/sitemap.xml');
+                                                    setCopied('sitemap');
+                                                    setTimeout(() => setCopied(null), 2000);
+                                                }}
+                                                style={{ padding: '8px', border: '1px solid #e5e5e5', borderRadius: '6px', backgroundColor: '#fff', cursor: 'pointer' }}
+                                            >
+                                                {copied === 'sitemap' ? <Check size={16} style={{ color: '#22c55e' }} /> : <Copy size={16} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <a
+                                        href="https://search.google.com/search-console"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#0369a1', fontSize: '0.9rem', textDecoration: 'none' }}
+                                    >
+                                        Open Search Console <ExternalLink size={14} />
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Google Merchant Center */}
+                            <div>
+                                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0, paddingBottom: '16px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <ShoppingBag size={24} style={{ color: '#4285f4' }} />
+                                    Google Merchant Center
+                                </h2>
+
+                                {/* Product Feed Export */}
+                                <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginTop: '16px' }}>
+                                    <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 600 }}>Product Feed Export</h3>
+                                    <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '16px' }}>
+                                        Export your products in Google Merchant Center compatible format for manual upload.
+                                    </p>
+                                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                        <a
+                                            href="/api/products/export?format=csv&currency=INR"
+                                            download="google-merchant-feed.csv"
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                padding: '12px 20px',
+                                                backgroundColor: '#000',
+                                                color: '#fff',
+                                                borderRadius: '10px',
+                                                fontSize: '0.9rem',
+                                                fontWeight: 500,
+                                                textDecoration: 'none'
+                                            }}
+                                        >
+                                            <Download size={16} /> Download CSV (INR)
+                                        </a>
+                                        <a
+                                            href="/api/products/export?format=csv&currency=USD"
+                                            download="google-merchant-feed.csv"
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                padding: '12px 20px',
+                                                backgroundColor: '#f5f5f7',
+                                                color: '#000',
+                                                borderRadius: '10px',
+                                                fontSize: '0.9rem',
+                                                fontWeight: 500,
+                                                textDecoration: 'none',
+                                                border: '1px solid #e5e5e5'
+                                            }}
+                                        >
+                                            <Download size={16} /> Download CSV (USD)
+                                        </a>
+                                        <a
+                                            href="/api/products/export?format=xml&currency=INR"
+                                            download="google-merchant-feed.xml"
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                padding: '12px 20px',
+                                                backgroundColor: '#f5f5f7',
+                                                color: '#000',
+                                                borderRadius: '10px',
+                                                fontSize: '0.9rem',
+                                                fontWeight: 500,
+                                                textDecoration: 'none',
+                                                border: '1px solid #e5e5e5'
+                                            }}
+                                        >
+                                            <Download size={16} /> Download XML
+                                        </a>
+                                    </div>
+                                </div>
+
+                                {/* Scheduled Feed URL */}
+                                <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginTop: '16px' }}>
+                                    <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 600 }}>Scheduled Feed URL</h3>
+                                    <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '12px' }}>
+                                        Use this URL in Google Merchant Center for automatic scheduled fetch:
+                                    </p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <code style={{ flex: 1, padding: '12px 16px', backgroundColor: '#f5f5f7', borderRadius: '8px', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            https://dripzy.store/api/products/export?format=xml&currency=INR
+                                        </code>
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText('https://dripzy.store/api/products/export?format=xml&currency=INR');
+                                                setCopied('feed');
+                                                setTimeout(() => setCopied(null), 2000);
+                                            }}
+                                            style={{ padding: '12px', border: '1px solid #e5e5e5', borderRadius: '8px', backgroundColor: '#fff', cursor: 'pointer' }}
+                                        >
+                                            {copied === 'feed' ? <Check size={16} style={{ color: '#22c55e' }} /> : <Copy size={16} />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Merchant Center ID */}
+                                <div style={{ padding: '20px', border: '1px solid #eee', borderRadius: '12px', marginTop: '16px' }}>
+                                    <div style={{ marginBottom: '16px' }}>
+                                        <label style={labelStyle}>Merchant Center ID</label>
+                                        <input
+                                            type="text"
+                                            placeholder="123456789"
+                                            value={merchantCenterId}
+                                            onChange={(e) => setMerchantCenterId(e.target.value)}
+                                            style={inputStyle}
+                                        />
+                                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '8px' }}>
+                                            Your Merchant Center account ID (for reference)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Setup Instructions */}
+                                <div style={{ padding: '20px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '12px', marginTop: '16px' }}>
+                                    <h3 style={{ margin: '0 0 12px', fontSize: '0.95rem', fontWeight: 600, color: '#0369a1' }}>
+                                        How to connect to Google Merchant Center:
+                                    </h3>
+                                    <ol style={{ margin: 0, paddingLeft: '20px', color: '#0369a1', fontSize: '0.9rem', lineHeight: 1.8 }}>
+                                        <li>
+                                            Create a{' '}
+                                            <a
+                                                href="https://merchants.google.com/"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ color: '#0369a1', fontWeight: 500 }}
+                                            >
+                                                Google Merchant Center account <ExternalLink size={12} style={{ display: 'inline' }} />
+                                            </a>
+                                        </li>
+                                        <li>Verify and claim your website URL</li>
+                                        <li>Go to Products → Feeds → Create Feed</li>
+                                        <li>Choose "Scheduled fetch" and paste the Feed URL above</li>
+                                        <li>Set fetch frequency (daily recommended)</li>
+                                        <li>Submit for review</li>
+                                    </ol>
+                                </div>
+
+                                {/* Quick Links */}
+                                <div style={{ display: 'flex', gap: '16px', marginTop: '16px', flexWrap: 'wrap' }}>
+                                    <a
+                                        href="https://merchants.google.com/"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#0369a1', fontSize: '0.9rem', textDecoration: 'none' }}
+                                    >
+                                        Open Merchant Center <ExternalLink size={14} />
+                                    </a>
+                                    <a
+                                        href="https://support.google.com/merchants/answer/7439058"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#0369a1', fontSize: '0.9rem', textDecoration: 'none' }}
+                                    >
+                                        Product Data Specification <ExternalLink size={14} />
+                                    </a>
+                                    <a
+                                        href="https://support.google.com/merchants/answer/188494"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#0369a1', fontSize: '0.9rem', textDecoration: 'none' }}
+                                    >
+                                        Feed Requirements <ExternalLink size={14} />
+                                    </a>
                                 </div>
                             </div>
                         </div>
