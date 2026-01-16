@@ -1,9 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ChevronRight, ChevronDown, Heart, SlidersHorizontal, Loader2, Package } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useCart } from '@/context/CartContext';
+
+import { CATEGORIES } from '@/lib/categories';
 
 interface Product {
     id: string;
@@ -12,6 +15,7 @@ interface Product {
     price: number;
     compareAtPrice?: number;
     category: string;
+    categories?: string[];
     subcategory?: string;
     featuredImage: string;
     variants: { key: string }[];
@@ -20,42 +24,47 @@ interface Product {
     currency?: string;
 }
 
-const CATEGORIES = ['All', 'Electronics', 'Clothing', 'Home', 'Audio', 'Chargers', 'Cases', 'Accessories'];
+const DISPLAY_CATEGORIES = ['All', ...CATEGORIES];
 
-export default function ProductsPage() {
+function ProductsContent() {
+    const searchParams = useSearchParams();
+    const urlCategory = searchParams.get('cat');
+
+    // Initialize category from URL if present, otherwise 'All'
+    const [category, setCategory] = useState(urlCategory || 'All');
+
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [category, setCategory] = useState('All');
     const [sortOpen, setSortOpen] = useState(false);
     const [sort, setSort] = useState('Latest');
     const { addItem } = useCart();
 
-    // Fetch products from API
+    // Update category when URL changes
+    useEffect(() => {
+        if (urlCategory) {
+            setCategory(urlCategory);
+        } else {
+            setCategory('All');
+        }
+    }, [urlCategory]);
+
     const fetchProducts = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const params = new URLSearchParams();
-            params.append('status', 'active'); // Only show active products
+            let queryUrl = '/api/products?limit=100';
             if (category !== 'All') {
-                params.append('category', category);
+                queryUrl += `&category=${encodeURIComponent(category)}`;
             }
 
-            const res = await fetch(`/api/products?${params.toString()}`);
-            const data = await res.json();
+            const response = await fetch(queryUrl);
+            if (!response.ok) throw new Error('Failed to fetch products');
+            const data = await response.json();
 
-            if (data.success) {
-                // Filter to only show visible products
-                const visibleProducts = data.data.products.filter((p: Product) =>
-                    p.status === 'active' && p.isVisible !== false
-                );
-                setProducts(visibleProducts);
-            } else {
-                setError(data.error || 'Failed to load products');
-            }
+            setProducts(data.data?.products || []);
         } catch (err) {
-            console.error('Error fetching products:', err);
+            console.error(err);
             setError('Failed to load products');
         } finally {
             setLoading(false);
@@ -105,13 +114,13 @@ export default function ProductsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', fontSize: '0.85rem', color: '#888' }}>
                         <Link href="/" style={{ color: '#888', textDecoration: 'none' }}>Home page</Link>
                         <span>→</span>
-                        <span style={{ color: '#000' }}>All Products</span>
+                        <span style={{ color: '#000', textTransform: 'capitalize' }}>{category === 'All' ? 'All Products' : category}</span>
                     </div>
 
                     {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
-                        <h1 style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>
-                            All Products
+                        <h1 style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', fontWeight: 600, letterSpacing: '-0.02em', margin: 0, textTransform: 'capitalize' }}>
+                            {category === 'All' ? 'All Products' : category}
                         </h1>
                         <div style={{ textAlign: 'right' }}>
                             <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '4px' }}>Shop our collection</p>
@@ -133,7 +142,7 @@ export default function ProductsPage() {
                     }}>
                         {/* Category Filters */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
-                            {CATEGORIES.map(cat => (
+                            {DISPLAY_CATEGORIES.map(cat => (
                                 <button
                                     key={cat}
                                     onClick={() => setCategory(cat)}
@@ -239,7 +248,7 @@ export default function ProductsPage() {
                     {!loading && !error && sortedProducts.length > 0 && (
                         <div style={{
                             display: 'grid',
-                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', // Responsive grid
                             gap: '32px'
                         }}>
                             {sortedProducts.map((product) => (
@@ -251,7 +260,8 @@ export default function ProductsPage() {
                                             borderRadius: '16px',
                                             overflow: 'hidden',
                                             marginBottom: '16px',
-                                            position: 'relative'
+                                            position: 'relative',
+                                            isolation: 'isolate' // Fixes safari overflow issues
                                         }}>
                                             <img
                                                 src={product.featuredImage || 'https://via.placeholder.com/600?text=Product'}
@@ -274,14 +284,15 @@ export default function ProductsPage() {
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                                                    zIndex: 2
                                                 }}
                                             >
                                                 <Heart size={18} />
                                             </button>
 
                                             {/* Compare At Price Badge */}
-                                            {product.compareAtPrice && product.compareAtPrice > product.price && (
+                                            {product.compareAtPrice && product.price && product.compareAtPrice > product.price && (
                                                 <div style={{
                                                     position: 'absolute',
                                                     top: '12px',
@@ -291,7 +302,8 @@ export default function ProductsPage() {
                                                     color: '#fff',
                                                     borderRadius: '50px',
                                                     fontSize: '0.75rem',
-                                                    fontWeight: 600
+                                                    fontWeight: 600,
+                                                    zIndex: 2
                                                 }}>
                                                     {Math.round((1 - product.price / product.compareAtPrice) * 100)}% OFF
                                                 </div>
@@ -314,15 +326,22 @@ export default function ProductsPage() {
 
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                            <span style={{ fontWeight: 600 }}>₹{product.price.toLocaleString('en-IN')}</span>
-                                            {product.compareAtPrice && product.compareAtPrice > product.price && (
+                                            <span style={{ fontWeight: 600 }}>
+                                                {/* Simple currency conversion display for now (assuming 1 USD = 85 INR if currency is USD) */}
+                                                {product.currency === 'USD'
+                                                    ? `₹${(product.price * 85).toLocaleString('en-IN')}`
+                                                    : (product.price ? `₹${product.price.toLocaleString('en-IN')}` : 'Price unavailable')}
+                                            </span>
+                                            {product.compareAtPrice && product.price && product.compareAtPrice > product.price && (
                                                 <span style={{
                                                     marginLeft: '8px',
                                                     fontSize: '0.85rem',
                                                     color: '#888',
                                                     textDecoration: 'line-through'
                                                 }}>
-                                                    ₹{product.compareAtPrice.toLocaleString('en-IN')}
+                                                    {product.currency === 'USD'
+                                                        ? `₹${(product.compareAtPrice * 85).toLocaleString('en-IN')}`
+                                                        : `₹${product.compareAtPrice.toLocaleString('en-IN')}`}
                                                 </span>
                                             )}
                                         </div>
@@ -362,5 +381,13 @@ export default function ProductsPage() {
                 }
             `}</style>
         </div>
+    );
+}
+
+export default function ProductsPage() {
+    return (
+        <Suspense fallback={<div style={{ textAlign: 'center', padding: '100px' }}><Loader2 size={40} className="animate-spin" /></div>}>
+            <ProductsContent />
+        </Suspense>
     );
 }

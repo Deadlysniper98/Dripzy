@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ShoppingBag, Search, User, Menu, X, Loader2, ChevronDown } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import { CATEGORY_HIERARCHY } from '@/lib/categories';
 import { useCart } from '@/context/CartContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { db } from '@/lib/firebase';
@@ -127,37 +128,120 @@ export const Header = () => {
                             <span className="af-menu-text">Shop</span>
                         </button>
                         {/* Mega Menu */}
-                        <div className="af-mega-overlay">
+                        <div className="af-mega-overlay" style={{ gridTemplateColumns: '1fr 1fr 1fr 1.5fr' }}>
+                            {/* Column 1: Electronics */}
                             <div className="af-mega-col">
-                                <h4>Apple Gear</h4>
-                                <ul className="af-mega-list">
-                                    <li><Link href="/products?cat=iphone" onMouseEnter={() => handleMegaHover('https://images.unsplash.com/photo-1603539947673-c6eb2934808f?q=80&w=2600&auto=format&fit=crop', 'iPhone Cases')}>iPhone Cases</Link></li>
-                                    <li><Link href="/products?cat=ipad" onMouseEnter={() => handleMegaHover('https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=2600&auto=format&fit=crop', 'iPad Protection')}>iPad Cases</Link></li>
-                                    <li><Link href="/products?cat=magsafe" onMouseEnter={() => handleMegaHover('https://images.unsplash.com/photo-1616348436168-de43ad0db179?q=80&w=2600&auto=format&fit=crop', 'MagSafe Ready')}>MagSafe</Link></li>
-                                </ul>
+                                {CATEGORY_HIERARCHY.filter(c => c.name === 'Electronics').map(group => (
+                                    <div key={group.name}>
+                                        <h4>
+                                            <Link href={`/category/${group.slug}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                                {group.name}
+                                            </Link>
+                                        </h4>
+                                        <ul className="af-mega-list">
+                                            {group.subcategories.map((sub) => {
+                                                const customImg = themeConfig?.megaMenuImages?.[sub];
+                                                const fallbackImg = 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?q=80&w=2600&auto=format&fit=crop';
+                                                return (
+                                                    <li key={sub}>
+                                                        <Link
+                                                            href={`/category/${sub}`}
+                                                            style={{ textTransform: 'capitalize' }}
+                                                            onMouseEnter={() => handleMegaHover(customImg || fallbackImg, sub)}
+                                                        >
+                                                            {sub}
+                                                        </Link>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
+                                ))}
                             </div>
+
+                            {/* Column 2: Fashion & Accessories */}
                             <div className="af-mega-col">
-                                <h4>Power & Sound</h4>
-                                <ul className="af-mega-list">
-                                    <li className="af-sub-group">Essentials</li>
-                                    <li><Link href="/products?cat=chargers" onMouseEnter={() => handleMegaHover('https://images.unsplash.com/photo-1583863788434-e58a36330cf0?q=80&w=2600&auto=format&fit=crop', 'Fast Charging')}>Adapters & Hubs</Link></li>
-                                    <li><Link href="/products?cat=audio" onMouseEnter={() => handleMegaHover('https://images.unsplash.com/photo-1546435770-a3e426bf472b?q=80&w=2600&auto=format&fit=crop', 'Immersive Audio')}>Headphones</Link></li>
-                                </ul>
+                                {CATEGORY_HIERARCHY.filter(c => c.name === 'Fashion' || c.name === 'Accessories').map(group => (
+                                    <div key={group.name} style={{ marginBottom: '32px' }}>
+                                        <h4>
+                                            <Link href={`/category/${group.slug}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                                {group.name}
+                                            </Link>
+                                        </h4>
+                                        <ul className="af-mega-list">
+                                            {group.subcategories.map((sub) => {
+                                                const customImg = themeConfig?.megaMenuImages?.[sub];
+                                                const fallbackImg = group.name === 'Fashion'
+                                                    ? 'https://images.unsplash.com/photo-1445205170230-053b83016050?q=80&w=2600&auto=format&fit=crop'
+                                                    : 'https://images.unsplash.com/photo-1620799140408-ed5341cd2431?q=80&w=2600&auto=format&fit=crop';
+                                                return (
+                                                    <li key={sub}>
+                                                        <Link
+                                                            href={`/category/${sub}`}
+                                                            style={{ textTransform: 'capitalize' }}
+                                                            onMouseEnter={() => handleMegaHover(customImg || fallbackImg, sub)}
+                                                        >
+                                                            {sub}
+                                                        </Link>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
+                                ))}
                             </div>
+
+                            {/* Column 3: Lifestyle */}
                             <div className="af-mega-col">
-                                <h4>Featured</h4>
-                                <ul className="af-mega-list">
-                                    <li><Link href="#" style={{ color: '#d0021b', fontWeight: 700 }}>NEW ARRIVALS</Link></li>
-                                    <li><Link href="#">Best Sellers</Link></li>
-                                    <li><Link href="#">Clearance</Link></li>
-                                </ul>
+                                {CATEGORY_HIERARCHY.filter(c => c.name === 'Lifestyle').map(group => (
+                                    <div key={group.name} style={{ marginBottom: '32px' }}>
+                                        <h4>
+                                            <Link href={`/category/${group.slug}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                                {group.name}
+                                            </Link>
+                                        </h4>
+                                        <ul className="af-mega-list">
+                                            {group.subcategories.map((sub) => {
+                                                const customImg = themeConfig?.megaMenuImages?.[sub];
+                                                const fallbackImg = 'https://images.unsplash.com/photo-1583847668182-518aeb33206c?q=80&w=2600&auto=format&fit=crop';
+                                                return (
+                                                    <li key={sub}>
+                                                        <Link
+                                                            href={`/category/${sub}`}
+                                                            style={{ textTransform: 'capitalize' }}
+                                                            onMouseEnter={() => handleMegaHover(customImg || fallbackImg, sub)}
+                                                        >
+                                                            {sub}
+                                                        </Link>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
+                                ))}
+                                <div>
+                                    <h4>Featured</h4>
+                                    <ul className="af-mega-list">
+                                        <li><Link href="/products" style={{ color: '#000', fontWeight: 600 }}>Shop All Products</Link></li>
+                                    </ul>
+                                </div>
                             </div>
+
+                            {/* Column 4: Promo Image */}
                             <div className="af-mega-col">
                                 <div className="af-menu-promo">
                                     <div className="af-promo-img-wrap">
-                                        <img src={promoImage} alt="Featured" className="active" style={{ opacity: 1 }} />
+                                        <img
+                                            src={promoImage}
+                                            alt="Featured"
+                                            className="active"
+                                            style={{ opacity: 1, objectFit: 'cover' }}
+                                        />
                                     </div>
-                                    <div className="af-promo-content"><div className="af-promo-title">{promoTitle}</div></div>
+                                    <div className="af-promo-content">
+                                        <div className="af-promo-title">{promoTitle}</div>
+                                        <p style={{ fontSize: '12px', margin: '4px 0 0', opacity: 0.9 }}>Featured Collection</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -213,19 +297,37 @@ export const Header = () => {
                     </button>
                 </div>
                 <div className="af-mobile-nav">
-                    <div className="af-mobile-acc-item active">
-                        <button className="af-mobile-acc-trigger" onClick={() => { }}>Shop Electronics <span>+</span></button>
-                        <div className="af-mobile-acc-content" style={{ maxHeight: '800px' }}>
-                            <ul className="af-mobile-sub-list">
-                                <li><Link href="/products">All Products</Link></li>
-                                <li><Link href="/products?cat=chargers">Chargers & Cables</Link></li>
-                                <li><Link href="/products?cat=cases">Cases & Protections</Link></li>
+                    {CATEGORY_HIERARCHY.map((group) => (
+                        <div className="af-mobile-acc-item active" key={group.name} style={{ marginBottom: '24px' }}>
+                            <div style={{
+                                fontWeight: 700,
+                                fontSize: '1.1rem',
+                                marginBottom: '12px',
+                                display: 'flex',
+                                justifyContent: 'space-between'
+                            }}>
+                                <Link href={`/category/${group.slug}`} onClick={toggleMobileMenu} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                    {group.name}
+                                </Link>
+                            </div>
+                            <ul className="af-mobile-sub-list" style={{ paddingLeft: '0', listStyle: 'none' }}>
+                                {group.subcategories.map((sub) => (
+                                    <li key={sub} style={{ marginBottom: '12px' }}>
+                                        <Link
+                                            href={`/category/${sub}`}
+                                            onClick={toggleMobileMenu}
+                                            style={{ color: '#666', textDecoration: 'none', fontSize: '0.95rem' }}
+                                        >
+                                            {sub}
+                                        </Link>
+                                    </li>
+                                ))}
                             </ul>
                         </div>
-                    </div>
-                    <div className="af-mobile-footer">
-                        <Link href="/account">My Account</Link>
-                        <Link href="#">Track Order</Link>
+                    ))}
+                    <div className="af-mobile-footer" style={{ marginTop: '40px', borderTop: '1px solid #eee', paddingTop: '24px' }}>
+                        <Link href="/account" style={{ display: 'block', marginBottom: '16px', fontWeight: 600 }}>My Account</Link>
+                        <Link href="/products" style={{ display: 'block', fontWeight: 600 }}>Shop All</Link>
                     </div>
                 </div>
             </div>

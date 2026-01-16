@@ -346,6 +346,17 @@ body.cart-drawer-open .af-navbar-wrap {
     transform: translateY(0);
     pointer-events: auto;
   }
+
+  /* Bridge gap between navbar and mega menu to sustain hover */
+  .af-nav-left:hover::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 40px;
+    z-index: 10;
+  }
 }
 
 .af-mega-col h4 {

@@ -21,6 +21,7 @@ import {
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { CATEGORY_HIERARCHY } from '@/lib/categories';
 
 interface HeroSlide {
     id: string;
@@ -46,6 +47,7 @@ interface ThemeConfig {
         enabled: boolean;
         backgroundColor: string;
     };
+    megaMenuImages: Record<string, string>;
 }
 
 const DEFAULT_CONFIG: ThemeConfig = {
@@ -70,7 +72,8 @@ const DEFAULT_CONFIG: ThemeConfig = {
         text: 'FREE SHIPPING ON ALL ORDERS OVER ₹999',
         enabled: true,
         backgroundColor: '#000000'
-    }
+    },
+    megaMenuImages: {}
 };
 
 export default function ThemePage() {
@@ -78,7 +81,7 @@ export default function ThemePage() {
     const [products, setProducts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [activeSection, setActiveSection] = useState<'hero' | 'categories' | 'products' | 'general'>('hero');
+    const [activeSection, setActiveSection] = useState<'hero' | 'categories' | 'products' | 'general' | 'menu'>('hero');
     const [draggedSlideIdx, setDraggedSlideIdx] = useState<number | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [uploadingIds, setUploadingIds] = useState<string[]>([]);
@@ -116,6 +119,10 @@ export default function ThemePage() {
                         image: c.image || '',
                         link: c.link || ''
                     }));
+                }
+
+                if (data.megaMenuImages) {
+                    loadedConfig.megaMenuImages = data.megaMenuImages;
                 }
 
                 setConfig(loadedConfig);
@@ -278,6 +285,11 @@ export default function ThemePage() {
                         onClick={() => setActiveSection('general')}
                         style={{ padding: '16px', borderRadius: '12px', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.95rem', fontWeight: 600, backgroundColor: activeSection === 'general' ? '#f5f5f7' : 'transparent', color: activeSection === 'general' ? '#000' : '#666' }}>
                         <RefreshCw size={20} /> Global Settings
+                    </button>
+                    <button
+                        onClick={() => setActiveSection('menu')}
+                        style={{ padding: '16px', borderRadius: '12px', border: 'none', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.95rem', fontWeight: 600, backgroundColor: activeSection === 'menu' ? '#f5f5f7' : 'transparent', color: activeSection === 'menu' ? '#000' : '#666' }}>
+                        <Plus size={20} /> Header Menu Images
                     </button>
                 </div>
 
@@ -665,6 +677,106 @@ export default function ThemePage() {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeSection === 'menu' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                            <div>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Header Mega Menu Images</h2>
+                                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: '4px' }}>Assign preview images for categories in the navigation menu. These show when users hover over links.</p>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+                                {CATEGORY_HIERARCHY.map((parent) => (
+                                    <div key={parent.slug} style={{ border: '1px solid #eee', borderRadius: '20px', padding: '24px' }}>
+                                        <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#888' }}>
+                                            {parent.name}
+                                        </h3>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                                            {parent.subcategories.map((sub) => {
+                                                const imgUrl = config.megaMenuImages?.[sub] || '';
+                                                return (
+                                                    <div key={sub} style={{ padding: '16px', backgroundColor: '#fafafa', borderRadius: '16px', border: '1px solid #f0f0f1' }}>
+                                                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '12px' }}>{sub}</label>
+
+                                                        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                                                            <div
+                                                                onClick={() => document.getElementById(`menu-file-${sub}`)?.click()}
+                                                                style={{
+                                                                    width: '80px',
+                                                                    height: '80px',
+                                                                    borderRadius: '12px',
+                                                                    border: '1px solid #eee',
+                                                                    backgroundColor: '#fff',
+                                                                    cursor: 'pointer',
+                                                                    overflow: 'hidden',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    flexShrink: 0
+                                                                }}>
+                                                                {uploadingIds.includes(sub) ? (
+                                                                    <Loader2 size={24} className="animate-spin" />
+                                                                ) : imgUrl ? (
+                                                                    <img src={imgUrl} alt={sub} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                                ) : (
+                                                                    <Upload size={24} style={{ color: '#ccc' }} />
+                                                                )}
+                                                            </div>
+                                                            <input
+                                                                id={`menu-file-${sub}`}
+                                                                type="file"
+                                                                hidden
+                                                                accept="image/*"
+                                                                onChange={async (e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (!file) return;
+
+                                                                    setUploadingIds(prev => [...prev, sub]);
+                                                                    const sRef = ref(storage, `menu/img_${Date.now()}_${sub}`);
+                                                                    try {
+                                                                        await uploadBytes(sRef, file);
+                                                                        const url = await getDownloadURL(sRef);
+                                                                        setConfig(prev => ({
+                                                                            ...prev,
+                                                                            megaMenuImages: {
+                                                                                ...prev.megaMenuImages,
+                                                                                [sub]: url
+                                                                            }
+                                                                        }));
+                                                                    } catch (err) {
+                                                                        console.error(err);
+                                                                        alert('Failed to upload menu image');
+                                                                    } finally {
+                                                                        setUploadingIds(prev => prev.filter(id => id !== sub));
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <div style={{ flex: 1 }}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={imgUrl}
+                                                                    placeholder="Image URL"
+                                                                    onChange={(e) => setConfig({
+                                                                        ...config,
+                                                                        megaMenuImages: {
+                                                                            ...config.megaMenuImages,
+                                                                            [sub]: e.target.value
+                                                                        }
+                                                                    })}
+                                                                    style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '10px', fontSize: '0.85rem' }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}

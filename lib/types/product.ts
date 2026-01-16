@@ -49,6 +49,7 @@ export interface Product {
 
     // Categorization
     category: string;
+    categories?: string[]; // Auto-categorized list
     categoryId: string;
     subcategory?: string;
     tags: string[];
@@ -204,6 +205,7 @@ export function convertCJProductToProduct(
         featuredImage: featuredImage,
 
         category: cjProduct.categoryName?.split('/')[0]?.trim() || 'General',
+        categories: [], // Will be populated by auto-categorization
         categoryId: cjProduct.categoryId,
         tags: [],
 

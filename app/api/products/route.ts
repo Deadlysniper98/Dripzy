@@ -19,12 +19,22 @@ export async function GET(request: NextRequest) {
             constraints.push(where('status', '==', status));
         }
 
-        if (category && category !== 'all') {
-            constraints.push(where('category', '==', category));
+        if (category && category.toLowerCase() !== 'all') {
+            // Use array-contains to find products that have this tag
+            constraints.push(where('tags', 'array-contains', category.toLowerCase()));
         }
 
-        // Always sort by latest and apply limit
-        constraints.push(orderBy('createdAt', 'desc'));
+        // Apply sorting:
+        // If we are filtering by category (array-contains), specific Firestore indexes are needed for orderBy('createdAt').
+        // To avoid complexity for the user, we will skip database sorting if a category filter is present
+        // and sort in memory instead.
+        const requiresComplexIndex = (category && category.toLowerCase() !== 'all');
+
+        if (!requiresComplexIndex) {
+            constraints.push(orderBy('createdAt', 'desc'));
+        }
+
+        // Apply limit
         constraints.push(limit(pageSize));
 
         const q = query(collection(db, 'products'), ...constraints);
@@ -37,6 +47,15 @@ export async function GET(request: NextRequest) {
             createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || null,
             updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || null,
         }));
+
+        // In-memory sort if we skipped DB sort
+        if (requiresComplexIndex) {
+            products.sort((a, b) => {
+                const dateA = new Date(a.createdAt).getTime();
+                const dateB = new Date(b.createdAt).getTime();
+                return dateB - dateA;
+            });
+        }
 
         // Client-side search filter (for now - could be improved with Algolia/ElasticSearch)
         if (search) {

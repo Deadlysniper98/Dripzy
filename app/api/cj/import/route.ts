@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { convertCJProductToProduct, generateSlug } from '@/lib/types/product';
 import { uploadImageFromUrl } from '@/lib/storage-utils';
+import { autoCategorize } from '@/lib/categories';
 
 export async function POST(request: NextRequest) {
     try {
@@ -69,6 +70,13 @@ export async function POST(request: NextRequest) {
             },
             marginPercent
         );
+
+        // Auto-categorize
+        const autoCategories = autoCategorize(productData.name, productData.description, productData.category);
+        productData.categories = autoCategories;
+        // Also add unique categories to tags (lowercase for search)
+        const lowerCategories = autoCategories.map(c => c.toLowerCase());
+        productData.tags = [...new Set([...(productData.tags || []), ...lowerCategories, 'all'])];
 
         // Ensure featured image is explicitly set to the first image if missing
         if (!productData.featuredImage && productData.images && productData.images.length > 0) {
