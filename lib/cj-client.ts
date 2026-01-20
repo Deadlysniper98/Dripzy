@@ -416,7 +416,21 @@ class CJDropshippingClient {
             }
         );
 
-        return response.data || [];
+        if (!response.data || response.data.length === 0) {
+            console.warn(`[CJ-SHIP] No bulk methods found from ${params.startCountryCode} to ${params.endCountryCode}`);
+            return [];
+        }
+
+        // Map V2 response fields to the format expected by the UI
+        const mappedData = response.data.map((item: any) => ({
+            ...item,
+            amount: item.logisticPrice, // Map logisticPrice to amount
+            name: item.logisticName,     // Map logisticName to name
+            aging: item.logisticAging    // Map logisticAging to aging
+        }));
+
+        console.log(`[CJ-SHIP] Bulk V2 API Found ${mappedData.length} methods`);
+        return mappedData;
     }
 
     /**

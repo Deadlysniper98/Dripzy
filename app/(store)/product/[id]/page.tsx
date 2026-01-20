@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useCurrency } from '@/context/CurrencyContext';
 import ProductDescriptionRenderer from '@/components/store/ProductDescriptionRenderer';
 import { useRouter } from 'next/navigation';
+import { CustomerReviews } from '@/components/store/CustomerReviews';
 
 interface Product {
     id: string;
@@ -415,6 +416,8 @@ export default function ProductPage({ params }: { params: Promise<{ id: string }
                             </div>
                         </div>
                     )}
+
+                    <CustomerReviews productId={product.id} productName={product.name} />
                 </section>
 
                 {/* Related Products */}
